@@ -9,8 +9,8 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->tabWidget->setTabText(0,"Parameters");
     ui->tabWidget->setTabText(1,"Results");
     tabParameterLayout_ = new QGridLayout;//new QGridLayout;//QFormLayout;QVBoxLayout;
-    //ui->tab_Parameters->setLayout(tabParameterLayout_);
-    ui->listViewParameters->setLayout(tabParameterLayout_);
+    ui->treeViewParameters->setLayout(tabParameterLayout_);
+
     this->setWindowTitle("INCA view");
 }
 
@@ -21,10 +21,11 @@ MainWindow::~MainWindow()
 
 void MainWindow::on_pushLoad_clicked()
 {
-    pathToDB_ = QFileDialog::getOpenFileName(this,tr("Select output database"),"/home/jose-luis/Documents/INCA/Netbeans_projects/Core_HBV",tr("Database files (*.db)"));
+    pathToDB_ = QFileDialog::getOpenFileName(this,tr("Select output database"),"c:/Users/Magnus/Documents/INCAView/test.db",tr("Database files (*.db)"));
     populateLayoutMap(tabParameterLayout_);
     treeParameters_ = new TreeModel();
     treeResults_ = new TreeModel(true);
+
     ui->treeView->setModel(treeParameters_);
     ui->treeView->expandToDepth(1);
     ui->treeView->setColumnHidden(1,TRUE);
@@ -53,7 +54,7 @@ void MainWindow::on_treeView_clicked(const QModelIndex &index)
 {
     for (auto & ID : itemsInGrid_)
     {
-        boost::get<layoutForDouble>(layoutMap_[ID]).setVisible(false);
+        layoutMap_[ID].setVisible(false);
     }
 
     itemsInGrid_.clear();
@@ -75,7 +76,7 @@ void MainWindow::on_treeView_clicked(const QModelIndex &index)
     while (query.next())
     {
         int ID = query.value(1).toInt();
-        boost::get<layoutForDouble>(layoutMap_[ID]).setVisible(true);
+        layoutMap_[ID].setVisible(true);
         itemsInGrid_.push_back(ID);
     }
     db_.close();
@@ -95,28 +96,50 @@ void MainWindow::on_treeViewResults_clicked(const QModelIndex &index)
     query.bindValue(":ID",ID);
     query.exec();
 
-    qDebug() << ID << " -> " << query.size();
+    //qDebug() << ID << " -> " << query.size();
     //qDebug() << query.size();
 
-    QVector<double> x,y;
+    //TODO: Currently times are just for debugging!!! Should read actual times from database.
+    double starttime = QDateTime::currentDateTime().toTime_t();
+    QVector<QCPGraphData> timeData(0);
+
+    //QVector<double> x,y;
     int cnt = 0;
     double min = std::numeric_limits<double>::max();
     double max = std::numeric_limits<double>::min();
     while (query.next())
     {
         double value = query.value(0).toDouble();
-        x.append(cnt++);
-        y.append(value);
+
+        QCPGraphData entry(starttime + 24*3600*(cnt++), value);
+
+        timeData.append(entry);
+
+        //x.append(cnt++);
+        //y.append(value);
         min = value < min ? value : min;
         max = value > max ? value : max;
     }
     db_.close();
 
+    if(max - min < QCPRange::minRange)
+    {
+        max = min + 2.0*QCPRange::minRange;
+    }
+    //qDebug() << "Min: " << min << "Max: " << max;
+
     // create graph and assign data to it:
     ui->widgetPlot->addGraph();
-    ui->widgetPlot->graph(0)->setData(x, y);
-    ui->widgetPlot->xAxis->setRange(0,cnt);
+    //ui->widgetPlot->graph(0)->setData(timeData);
+    ui->widgetPlot->graph(0)->data()->set(timeData);
+    //ui->widgetPlot->xAxis->setRange(0,cnt);
+
+    QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
+    dateTicker->setDateTimeFormat("d. MMMM\nyyyy");
+    ui->widgetPlot->xAxis->setTicker(dateTicker);
+
     ui->widgetPlot->yAxis->setRange(min,max);
+    ui->widgetPlot->xAxis->setRange(starttime, starttime+24*3600*(cnt-1));
 
     ui->widgetPlot->replot();
 

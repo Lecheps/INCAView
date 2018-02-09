@@ -10,9 +10,29 @@
 #include<QLineEdit>
 #include<QSpacerItem>
 #include<QLabel>
-#include<boost/variant.hpp>
 
-class layoutForDouble
+//TODO: make more possible types.
+enum class valueType
+{
+    DOUBLE,
+    UINT,
+};
+
+inline valueType getValueType(QString& TypeStr)
+{
+    if(TypeStr == "DOUBLE") return valueType::DOUBLE;
+    if(TypeStr == "UINT") return valueType::UINT;
+
+    qFatal(("Unknown type " + TypeStr + " for parameter values.").toLatin1().data());
+}
+
+union valueStorage
+{
+    double valueDouble;
+    uint64_t valueUint;
+};
+
+class layoutForValue
 {
 public:
 
@@ -22,15 +42,13 @@ public:
     QLabel* parameterMin;
     QLabel* parameterMax;
     //QSpacerItem* spacer;
-    layoutForDouble(QString&, double&, double&, double&);
-    layoutForDouble();
-    ~layoutForDouble();
+    layoutForValue(QString&, valueStorage&, valueStorage&, valueStorage&, valueType);
+    layoutForValue();
+    ~layoutForValue();
     void addToGrid(QGridLayout*,int&);
     void setVisible(bool);
     //void operator <<  (QGridLayout*);
 };
-
-typedef boost::variant<layoutForDouble,double> layoutVariant;
 
 class sqlInterface
 {
@@ -43,7 +61,7 @@ protected:
     static QSqlDatabase db_;
     static QSqlQueryModel queryModel_;
     static QString pathToDB_;
-    static std::map<int,layoutVariant> layoutMap_;
+    static std::map<int,layoutForValue> layoutMap_;
     static void populateLayoutMap(QGridLayout*)
 ;
 private:
