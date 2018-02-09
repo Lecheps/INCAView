@@ -45,7 +45,7 @@ public:
     layoutForValue(QString&, valueStorage&, valueStorage&, valueStorage&, valueType);
     layoutForValue();
     ~layoutForValue();
-    void addToGrid(QGridLayout*,int&);
+    void addToGrid(QGridLayout*,int);
     void setVisible(bool);
     //void operator <<  (QGridLayout*);
 };

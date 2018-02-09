@@ -17,13 +17,28 @@ layoutForValue::layoutForValue(QString& name, valueStorage& value, valueStorage&
         parameterValue->setText(QString::number(value.valueDouble, 'g', 5));
         parameterMin->setText(QString::number(min.valueDouble, 'g', 5));
         parameterMax->setText(QString::number(max.valueDouble, 'g', 5));
-    }break;
+    } break;
 
     case valueType::UINT:
     {
         parameterValue->setText(QString::number(value.valueUint));
         parameterMin->setText(QString::number(min.valueUint));
         parameterMax->setText(QString::number(max.valueUint));
+    } break;
+
+    case valueType::BOOL:
+    {
+        parameterValue->setText(value.valueBool ? "true" : false);
+        parameterMin->setText("");
+        parameterMax->setText("");
+    } break;
+
+    case valueType::PTIME:
+    {
+        QDateTime dt = QDateTime::fromSecsSinceEpoch(value.valueTime);
+        parameterValue->setText(dt.toString("d. MMMM\nyyyy"));
+        parameterMin->setText("");
+        parameterMax->setText("");
     } break;
 
     default:
@@ -35,7 +50,7 @@ layoutForValue::layoutForValue(QString& name, valueStorage& value, valueStorage&
 }
 layoutForValue::layoutForValue(){}
 layoutForValue::~layoutForValue(){}
-void layoutForValue::addToGrid(QGridLayout* grid, int &rowNumber)
+void layoutForValue::addToGrid(QGridLayout* grid, int rowNumber)
 {
     grid->addWidget(parameterName,rowNumber,0,1,1);
     grid->addWidget(parameterValue,rowNumber,1,1,1);
@@ -75,6 +90,19 @@ std::map<int,layoutForValue> sqlInterface::layoutMap_;
 
 void sqlInterface::populateLayoutMap(QGridLayout* grid)
 {
+    //NOTE: Rudimentary headers for the parameter view. They currently don't look in style with the rest of the views.
+    QStringList headerLabels;
+    headerLabels << "Name" << "Value" << "Min" << "Max";
+    int col = 0;
+    for (auto& label : headerLabels)
+    {
+        QLabel *qlabel = new QLabel(label);
+        qlabel->setMaximumHeight(20);
+        qlabel->setStyleSheet("background-color: silver; color: black; border: 1px solid #6c6c6c;");
+        grid->addWidget(qlabel, 0, col++, 1, 1);
+    }
+
+
     connectToDB();
     QSqlQuery query;
     query.prepare(   "SELECT "
@@ -82,8 +110,6 @@ void sqlInterface::populateLayoutMap(QGridLayout* grid)
                     "FROM "
                     "    ParameterStructure INNER JOIN ParameterValues "
                     "    ON ParameterStructure.ID = ParameterValues.ID; "
-  //                  "WHERE "
-  //                  "    ParameterStructure.type = 'DOUBLE'; "
                 );
     query.exec();
     int cnt = 0;
@@ -96,6 +122,7 @@ void sqlInterface::populateLayoutMap(QGridLayout* grid)
         valueStorage value;
         valueStorage min;
         valueStorage max;
+
         switch(type)
         {
         case valueType::DOUBLE:
@@ -112,17 +139,26 @@ void sqlInterface::populateLayoutMap(QGridLayout* grid)
             max.valueUint = query.value(4).toUInt();
         }break;
 
+        case valueType::BOOL:
+        {
+            //NOTE: this is untested. How are bools represented in the database?
+            value.valueBool = query.value(5).toBool();
+        }break;
+
+        case valueType::PTIME:
+        {
+            //NOTE: this is untested. How is ptime represented in the database?
+            value.valueTime = query.value(5).toInt();
+        }break;
+
         default:
         {
             qFatal("Received an unknown value type!");
         }break;
         }
 
-        //double value = query.value(5).toDouble();
-        //double min = query.value(3).toDouble();
-        //double max = query.value(4).toDouble();
         layoutForValue dummy = layoutForValue(name,value,min,max,type);
-        dummy.addToGrid(grid,cnt);
+        dummy.addToGrid(grid, cnt+1);
         dummy.setVisible(false);
         layoutMap_[ID] = dummy;
         ++cnt;

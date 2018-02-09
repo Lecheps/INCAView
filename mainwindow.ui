@@ -23,7 +23,7 @@
          <widget class="QTreeView" name="treeView"/>
         </item>
         <item>
-         <widget class="QTreeView" name="treeViewParameters"/>
+         <widget class="QListView" name="listViewParameters"/>
         </item>
         <item>
          <widget class="QTreeView" name="treeViewResults"/>
@@ -36,7 +36,7 @@
       <item>
        <widget class="QTabWidget" name="tabWidget">
         <property name="currentIndex">
-         <number>0</number>
+         <number>1</number>
         </property>
         <widget class="QWidget" name="tab_Parameters">
          <attribute name="title">
@@ -125,14 +125,6 @@
      <height>18</height>
     </rect>
    </property>
-  </widget>
-  <widget class="QToolBar" name="mainToolBar">
-   <attribute name="toolBarArea">
-    <enum>LeftToolBarArea</enum>
-   </attribute>
-   <attribute name="toolBarBreak">
-    <bool>false</bool>
-   </attribute>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
  </widget>

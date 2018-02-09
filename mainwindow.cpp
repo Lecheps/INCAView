@@ -9,8 +9,15 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->tabWidget->setTabText(0,"Parameters");
     ui->tabWidget->setTabText(1,"Results");
     tabParameterLayout_ = new QGridLayout;//new QGridLayout;//QFormLayout;QVBoxLayout;
-    ui->treeViewParameters->setLayout(tabParameterLayout_);
-
+    ui->listViewParameters->setLayout(tabParameterLayout_);
+    /*
+    //TODO: this is a hack to get header labels for the parameter view. It is not done properly, so nothing aligns. It should be replaced by a better way of doing it!!
+    delete ui->treeWidgetParameters->layout();
+    ui->treeWidgetParameters->setLayout(tabParameterLayout_);
+    QStringList headerLabels;
+    headerLabels << "Name" << "Value" << "Min" << "Max";
+    ui->treeWidgetParameters->setHeaderLabels(headerLabels);
+    */
     this->setWindowTitle("INCA view");
 }
 
@@ -27,12 +34,12 @@ void MainWindow::on_pushLoad_clicked()
     treeResults_ = new TreeModel(true);
 
     ui->treeView->setModel(treeParameters_);
-    ui->treeView->expandToDepth(1);
-    ui->treeView->setColumnHidden(1,TRUE);
+    ui->treeView->expandToDepth(3);
+    //ui->treeView->setColumnHidden(1,TRUE);
     ui->treeView->resizeColumnToContents(0);
     ui->treeViewResults->setModel(treeResults_);
     ui->treeViewResults->expandToDepth(1);
-
+    ui->treeViewResults->resizeColumnToContents(0);
 }
 
 
@@ -40,7 +47,6 @@ void MainWindow::on_pushLoad_clicked()
 void MainWindow::on_pushResults_clicked()
 {
     //When clicked, display the results database
-
 }
 
 void MainWindow::on_pushParameters_clicked()
@@ -142,5 +148,7 @@ void MainWindow::on_treeViewResults_clicked(const QModelIndex &index)
     ui->widgetPlot->xAxis->setRange(starttime, starttime+24*3600*(cnt-1));
 
     ui->widgetPlot->replot();
+
+    ui->tabWidget->setCurrentIndex(1);
 
 }
