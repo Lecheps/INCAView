@@ -29,13 +29,13 @@ public:
 private slots:
 
     void on_pushLoad_clicked();
-
-    void on_pushResults_clicked();
-
-    void on_pushParameters_clicked();
+    void on_pushSave_clicked();
+    void on_pushRun_clicked();
 
     void on_treeView_clicked(const QModelIndex &index);
     void on_treeViewResults_clicked(const QModelIndex &index);
+
+    void runINCA();
 
 private:
     Ui::MainWindow *ui;

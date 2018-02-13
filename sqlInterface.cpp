@@ -1,69 +1,46 @@
 #include "sqlInterface.h"
 
 
-layoutForValue::layoutForValue(QString& name, valueStorage& value, valueStorage& min, valueStorage& max, valueType type)
+layoutForParameter::layoutForParameter(QString& name, parameterValue& value, parameterValue& min, parameterValue& max, int dbID)
 {
     //layout = new QHBoxLayout;
-    parameterName = new QLabel;
-    parameterValue = new QLineEdit;
-    parameterMin = new QLabel;
-    parameterMax = new QLabel;
-    parameterName->setText(name);
+    parameterNameView = new QLabel;
+    parameterValueView = new QLineEdit;
+    parameterMinView = new QLabel;
+    parameterMaxView = new QLabel;
+    parameterNameView->setText(name);
 
-    switch(type)
-    {
-    case valueType::DOUBLE:
-    {
-        parameterValue->setText(QString::number(value.valueDouble, 'g', 5));
-        parameterMin->setText(QString::number(min.valueDouble, 'g', 5));
-        parameterMax->setText(QString::number(max.valueDouble, 'g', 5));
-    } break;
+    this->min = min; // We store the values for these, not just their text fields, so that it is efficient to check when edited values fall within range.
+    this->max = max;
+    this->value = value;
 
-    case valueType::UINT:
-    {
-        parameterValue->setText(QString::number(value.valueUint));
-        parameterMin->setText(QString::number(min.valueUint));
-        parameterMax->setText(QString::number(max.valueUint));
-    } break;
+    this->valueIsValidAndInRange = value.isValid() && value.isInRange(min, max);
 
-    case valueType::BOOL:
-    {
-        parameterValue->setText(value.valueBool ? "true" : false);
-        parameterMin->setText("");
-        parameterMax->setText("");
-    } break;
+    //NOTE: Had to make sqlInterface::valueChangedReceiveMessage public for this to work, so this is really just global functionality. Not generally a good solution, but it works atm.
+    QObject::connect(parameterValueView, &QLineEdit::textEdited,
+                     [dbID](const QString& newValue){sqlInterface::valueChangedReceiveMessage(newValue, dbID);});
 
-    case valueType::PTIME:
-    {
-        QDateTime dt = QDateTime::fromSecsSinceEpoch(value.valueTime);
-        parameterValue->setText(dt.toString("d. MMMM\nyyyy"));
-        parameterMin->setText("");
-        parameterMax->setText("");
-    } break;
-
-    default:
-    {
-        qFatal("Received a value type that is not handled!");
-    }break;
-    }
-
+    int precision = 5;
+    parameterValueView->setText(value.getValueString(precision));
+    parameterMinView->setText(min.getValueString(precision));
+    parameterMaxView->setText(max.getValueString(precision));
 }
-layoutForValue::layoutForValue(){}
-layoutForValue::~layoutForValue(){}
-void layoutForValue::addToGrid(QGridLayout* grid, int rowNumber)
+layoutForParameter::layoutForParameter(){}
+layoutForParameter::~layoutForParameter(){}
+void layoutForParameter::addToGrid(QGridLayout* grid, int rowNumber)
 {
-    grid->addWidget(parameterName,rowNumber,0,1,1);
-    grid->addWidget(parameterValue,rowNumber,1,1,1);
-    grid->addWidget(parameterMin,rowNumber,2,1,1);
-    grid->addWidget(parameterMax,rowNumber,3,1,1);
+    grid->addWidget(parameterNameView,rowNumber,0,1,1);
+    grid->addWidget(parameterValueView,rowNumber,1,1,1);
+    grid->addWidget(parameterMinView,rowNumber,2,1,1);
+    grid->addWidget(parameterMaxView,rowNumber,3,1,1);
 }
 
-void layoutForValue::setVisible(bool isVisible)
+void layoutForParameter::setVisible(bool isVisible)
 {
-    parameterName->setVisible(isVisible);
-    parameterValue->setVisible(isVisible);
-    parameterMin->setVisible(isVisible);
-    parameterMax->setVisible(isVisible);
+    parameterNameView->setVisible(isVisible);
+    parameterValueView->setVisible(isVisible);
+    parameterMinView->setVisible(isVisible);
+    parameterMaxView->setVisible(isVisible);
 }
 
 sqlInterface::sqlInterface()
@@ -86,7 +63,8 @@ bool sqlInterface::connectToDB()
 QSqlDatabase sqlInterface::db_;
 QSqlQueryModel sqlInterface::queryModel_;
 QString sqlInterface::pathToDB_;
-std::map<int,layoutForValue> sqlInterface::layoutMap_;
+std::map<int,layoutForParameter> sqlInterface::layoutMap_;
+bool sqlInterface::dbIsLoaded_;
 
 void sqlInterface::populateLayoutMap(QGridLayout* grid)
 {
@@ -117,51 +95,48 @@ void sqlInterface::populateLayoutMap(QGridLayout* grid)
     {
         int ID = query.value(2).toInt();
         QString name = query.value(0).toString();
-        QString typeStr = query.value(1).toString();
-        valueType type = getValueType(typeStr);
-        valueStorage value;
-        valueStorage min;
-        valueStorage max;
+        parameterValue value(query.value(5).toString(), query.value(1).toString());
+        parameterValue min(query.value(3).toString(), query.value(1).toString());;
+        parameterValue max(query.value(4).toString(), query.value(1).toString());;
 
-        switch(type)
-        {
-        case valueType::DOUBLE:
-        {
-            value.valueDouble = query.value(5).toDouble();
-            min.valueDouble = query.value(3).toDouble();
-            max.valueDouble = query.value(4).toDouble();
-        }break;
-
-        case valueType::UINT:
-        {
-            value.valueUint = query.value(5).toUInt();
-            min.valueUint = query.value(3).toUInt();
-            max.valueUint = query.value(4).toUInt();
-        }break;
-
-        case valueType::BOOL:
-        {
-            //NOTE: this is untested. How are bools represented in the database?
-            value.valueBool = query.value(5).toBool();
-        }break;
-
-        case valueType::PTIME:
-        {
-            //NOTE: this is untested. How is ptime represented in the database?
-            value.valueTime = query.value(5).toInt();
-        }break;
-
-        default:
-        {
-            qFatal("Received an unknown value type!");
-        }break;
-        }
-
-        layoutForValue dummy = layoutForValue(name,value,min,max,type);
+        layoutForParameter dummy = layoutForParameter(name,value,min,max,ID);
         dummy.addToGrid(grid, cnt+1);
         dummy.setVisible(false);
         layoutMap_[ID] = dummy;
         ++cnt;
     }
     db_.close();
+}
+
+void sqlInterface::valueChangedReceiveMessage(const QString& newValue, int dbID)
+{
+    if(layoutMap_.count(dbID) != 0)
+    {
+        layoutForParameter& layout = layoutMap_[dbID];
+
+        layout.valueIsValidAndInRange = layout.value.setValue(newValue) && layout.value.isInRange(layout.min, layout.max);
+
+        if(layout.valueIsValidAndInRange)
+        {
+            layout.parameterValueView->setStyleSheet("QLineEdit { color : black; }");
+
+            //update db
+            connectToDB();
+
+            QSqlQuery query;
+            query.prepare( "UPDATE "
+                           " ParameterValues "
+                           " SET "
+                           " value = '" + newValue +
+                            "' WHERE "
+                            " ID = " + QString::number(dbID) + ";");
+            query.exec();
+
+            db_.close();
+        }
+        else
+        {
+            layout.parameterValueView->setStyleSheet("QLineEdit { color : red; }");
+        }
+    }
 }

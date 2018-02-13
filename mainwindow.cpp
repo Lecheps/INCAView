@@ -5,19 +5,15 @@ MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow)
 {
+    dbIsLoaded_ = false;
+
     ui->setupUi(this);
-    ui->tabWidget->setTabText(0,"Parameters");
-    ui->tabWidget->setTabText(1,"Results");
     tabParameterLayout_ = new QGridLayout;//new QGridLayout;//QFormLayout;QVBoxLayout;
     ui->listViewParameters->setLayout(tabParameterLayout_);
-    /*
-    //TODO: this is a hack to get header labels for the parameter view. It is not done properly, so nothing aligns. It should be replaced by a better way of doing it!!
-    delete ui->treeWidgetParameters->layout();
-    ui->treeWidgetParameters->setLayout(tabParameterLayout_);
-    QStringList headerLabels;
-    headerLabels << "Name" << "Value" << "Min" << "Max";
-    ui->treeWidgetParameters->setHeaderLabels(headerLabels);
-    */
+
+    ui->pushSave->setEnabled(false);
+    ui->pushRun->setEnabled(false);
+
     this->setWindowTitle("INCA view");
 }
 
@@ -28,7 +24,15 @@ MainWindow::~MainWindow()
 
 void MainWindow::on_pushLoad_clicked()
 {
+    if(dbIsLoaded_)
+    {
+        //TODO: cleanup any old data and do what is needed to stop stuff from breaking.
+    }
+    ui->pushSave->setEnabled(true);
+    ui->pushRun->setEnabled(true);
+
     pathToDB_ = QFileDialog::getOpenFileName(this,tr("Select output database"),"c:/Users/Magnus/Documents/INCAView/test.db",tr("Database files (*.db)"));
+    dbIsLoaded_ = true;
     populateLayoutMap(tabParameterLayout_);
     treeParameters_ = new TreeModel();
     treeResults_ = new TreeModel(true);
@@ -42,19 +46,54 @@ void MainWindow::on_pushLoad_clicked()
     ui->treeViewResults->resizeColumnToContents(0);
 }
 
-
-
-void MainWindow::on_pushResults_clicked()
+void MainWindow::on_pushSave_clicked()
 {
-    //When clicked, display the results database
+    if(dbIsLoaded_) // Just for safety. The button is disabled in this case.
+    {
+        QString pathToSave = QFileDialog::getSaveFileName(this, tr("Select location to store a backup copy of the database"), "c:/Users/Magnus/Documents/INCAView/", tr("Database files (*.db)"));
+
+        QFile::copy(pathToDB_, pathToSave);
+    }
 }
 
-void MainWindow::on_pushParameters_clicked()
+void MainWindow::on_pushRun_clicked()
 {
-    //When clicked, display the parameter structure
+    if(dbIsLoaded_) // Just for safety. The button is disabled in this case.
+    {
+        bool validValues = true;
+        for(auto& key_value : layoutMap_)
+        {
+            if(!key_value.second.valueIsValidAndInRange)
+            {
+                validValues = false;
+                break;
+            }
+        }
+        if(validValues)
+        {
+            runINCA();
+        }
+        else
+        {
+            QMessageBox msgBox(QMessageBox::Warning, tr("Invalid parameters"), tr("Not all parameters are set with valid values. Run with most recent valid values?"));
+            QPushButton *runButton = msgBox.addButton(tr("Run model"), QMessageBox::ActionRole);
+            QPushButton *abortButton = msgBox.addButton(QMessageBox::Cancel);
 
+            msgBox.exec();
+
+            if (msgBox.clickedButton() == runButton) {
+                runINCA();
+            } else if (msgBox.clickedButton() == abortButton) {
+                // abort
+            }
+        }
+    }
 }
 
+void MainWindow::runINCA()
+{
+    //TODO: implement
+}
 
 void MainWindow::on_treeView_clicked(const QModelIndex &index)
 {
@@ -149,6 +188,6 @@ void MainWindow::on_treeViewResults_clicked(const QModelIndex &index)
 
     ui->widgetPlot->replot();
 
-    ui->tabWidget->setCurrentIndex(1);
+    //ui->tabWidget->setCurrentIndex(1);
 
 }

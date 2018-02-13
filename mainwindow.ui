@@ -31,53 +31,34 @@
        </layout>
       </item>
       <item>
-       <layout class="QVBoxLayout" name="verticalLayout_3"/>
+       <widget class="QCustomPlot" name="widgetPlot" native="true">
+        <property name="enabled">
+         <bool>true</bool>
+        </property>
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="MinimumExpanding" vsizetype="Preferred">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>400</height>
+         </size>
+        </property>
+       </widget>
       </item>
       <item>
-       <widget class="QTabWidget" name="tabWidget">
-        <property name="currentIndex">
-         <number>1</number>
-        </property>
-        <widget class="QWidget" name="tab_Parameters">
-         <attribute name="title">
-          <string>Tab 1</string>
-         </attribute>
-        </widget>
-        <widget class="QWidget" name="tab_Results">
-         <attribute name="title">
-          <string>Tab 2</string>
-         </attribute>
-         <widget class="QCustomPlot" name="widgetPlot" native="true">
-          <property name="geometry">
-           <rect>
-            <x>0</x>
-            <y>0</y>
-            <width>1071</width>
-            <height>341</height>
-           </rect>
-          </property>
-         </widget>
-        </widget>
-       </widget>
+       <layout class="QVBoxLayout" name="verticalLayout_3"/>
       </item>
       <item>
        <layout class="QHBoxLayout" name="buttonsLayout">
         <item>
-         <widget class="QPushButton" name="pushParameters">
-          <property name="text">
-           <string>Parameters</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="pushResults">
-          <property name="text">
-           <string>Results</string>
-          </property>
-         </widget>
-        </item>
-        <item>
          <widget class="QPushButton" name="pushRun">
+          <property name="toolTip">
+           <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Run INCA. Results are stored in the currently loaded database.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+          </property>
           <property name="text">
            <string>Run model</string>
           </property>
@@ -98,15 +79,21 @@
         </item>
         <item>
          <widget class="QPushButton" name="pushLoad">
+          <property name="toolTip">
+           <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Load a parameters and results database to work with.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+          </property>
           <property name="text">
            <string>Load</string>
           </property>
          </widget>
         </item>
         <item>
-         <widget class="QPushButton" name="pushClose">
+         <widget class="QPushButton" name="pushSave">
+          <property name="toolTip">
+           <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Save a backup of the current loaded database.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+          </property>
           <property name="text">
-           <string>Close</string>
+           <string>Save backup</string>
           </property>
          </widget>
         </item>
@@ -138,10 +125,6 @@
   </customwidget>
  </customwidgets>
  <tabstops>
-  <tabstop>pushLoad</tabstop>
-  <tabstop>pushClose</tabstop>
-  <tabstop>pushParameters</tabstop>
-  <tabstop>pushResults</tabstop>
   <tabstop>pushRun</tabstop>
   <tabstop>treeView</tabstop>
  </tabstops>
