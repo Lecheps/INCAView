@@ -30,20 +30,40 @@ private slots:
 
     void on_pushLoad_clicked();
     void on_pushSave_clicked();
+    void on_pushSaveAs_clicked();
     void on_pushRun_clicked();
+    void closeEvent (QCloseEvent *);
 
     void on_treeView_clicked(const QModelIndex &index);
     void on_treeViewResults_clicked(const QModelIndex &index);
 
-    void runINCA();
 
 private:
+
+    void populateLayoutMap(QGridLayout*);
+    void parameterWasEdited(const QString&, int);
+
+    void toggleStuffHasBeenEditedSinceLastSave(bool);
+
+    bool areAllParametersValid();
+
+    void runINCA();
+
+    static bool copyAndOverwriteFile(const QString&, const QString&);
+    bool tryToSave(const QString&, const QString&);
+
     Ui::MainWindow *ui;
 
     TreeModel *treeParameters_, *treeResults_;
 //    QVBoxLayout* tabParameterLayout_;
     QGridLayout* tabParameterLayout_;
     std::vector<int> itemsInGrid_;
+    std::map<int,layoutForParameter*> layoutMap_;
+
+    const QString tempWorkingDBPath = "__temp.db";
+    QString loadedDBPath_;
+
+    bool stuffHasBeenEditedSinceLastSave = false;
 };
 
 

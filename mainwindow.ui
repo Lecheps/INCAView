@@ -93,7 +93,14 @@
            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Save a backup of the current loaded database.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
           </property>
           <property name="text">
-           <string>Save backup</string>
+           <string>Save</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="pushSaveAs">
+          <property name="text">
+           <string>Save as</string>
           </property>
          </widget>
         </item>

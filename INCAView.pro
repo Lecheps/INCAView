@@ -5,9 +5,9 @@
 #-------------------------------------------------
 QMAKE_CXXFLAGS += -std=c++11
 
-QT       += core gui sql
+QT       += core gui sql widgets printsupport
 
-greaterThan(QT_MAJOR_VERSION, 5): QT += widgets printsupport
+#greaterThan(QT_MAJOR_VERSION, 5): QT += widgets printsupport
 
 TARGET = INCAView
 TEMPLATE = app
@@ -18,22 +18,24 @@ SOURCES += main.cpp\
     sqlInterface.cpp \
     treeitem.cpp \
     treemodel.cpp \
-    /home/jose-luis/Documents/qcustomplot/qcustomplot.cpp
+    qcustomplot.cpp \
+    parameter.cpp
 
 HEADERS  += mainwindow.h \
     sqlInterface.h \
     treemodel.h \
     treeitem.h \
-    /home/jose-luis/Documents/qcustomplot/qcustomplot.h
+    qcustomplot.h \
+    parameter.h
 
 FORMS    += mainwindow.ui
 
 
 unix:!macx: LIBS += -L$$PWD/../Documents/INCA/libraries/sqlite3/libs/ -lsqlite3
 
-INCLUDEPATH += $$PWD/../Documents/INCA/libraries/sqlite3\
-                /usr/local/boost_1_65_1
-DEPENDPATH += $$PWD/../Documents/INCA/libraries/sqlite3
+INCLUDEPATH += $$PWD/../INCA/INCA/libraries/sqlite3\
+               $$PWD/../INCA/INCA/libraries/boost/include
+DEPENDPATH += $$PWD/../INCA/INCA/libraries/sqlite3
 
 
-unix:!macx: PRE_TARGETDEPS += $$PWD/../Documents/INCA/libraries/sqlite3/libs/libsqlite3.a
+unix:!macx: PRE_TARGETDEPS += $$PWD/../INCA/INCA/libraries/sqlite3/libs/libsqlite3.a

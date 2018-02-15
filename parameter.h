@@ -2,6 +2,13 @@
 #define PARAMETER_H
 
 #include <QString>
+#include <QSqlDatabase>
+#include <QSqlQuery>
+#include <QSqlQueryModel>
+#include <QHBoxLayout>
+#include <QLineEdit>
+#include <QSpacerItem>
+#include <QLabel>
 
 class parameterValue
 {
@@ -13,22 +20,18 @@ public:
         UINT,
         BOOL,
         PTIME,
+        UNKNOWN,
     };
+
+    parameterValue(const QString &, const QString &);
+    parameterValue();
 
     static Type parseParameterType(const QString &);
 
-    parameterValue(const QString &, const QString &);
-
-    parameterValue();
-
     bool isValid() { return valid; }
-
     bool setValue(const QString &);
-
     QString getValueString(int precision = 3);
-
-    Type getType() { return type; }
-
+    //Type getType() { return type; }
     bool isInRange(const parameterValue&, const parameterValue&);
 
 private:
@@ -41,6 +44,38 @@ private:
     } value;
     bool valid;
     Type type;
+};
+
+class layoutForParameter : public QObject
+{
+
+    Q_OBJECT
+public:
+    //QHBoxLayout* layout;
+
+    //QSpacerItem* spacer;
+    layoutForParameter(QString&, parameterValue&, parameterValue&, parameterValue&);
+    //layoutForParameter() {};
+    ~layoutForParameter();
+
+    void addToGrid(QGridLayout*,int);
+    void setVisible(bool);
+
+    void valueEditedReceiveMessage(const QString&);
+
+    bool isValueValidAndInRange() { return valueIsValidAndInRange; }
+private:
+    QLabel* parameterNameView;
+    QLineEdit* parameterValueView;
+    QLabel* parameterMinView;
+    QLabel* parameterMaxView;
+    parameterValue value;
+    parameterValue min;
+    parameterValue max;
+    bool valueIsValidAndInRange;
+
+signals:
+    void signalValueWasEdited(const QString&);
 };
 
 #endif // PARAMETER_H

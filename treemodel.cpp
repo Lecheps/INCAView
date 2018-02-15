@@ -79,7 +79,7 @@ TreeModel::TreeModel(QObject *parent)
     rootData << "Parameter Structure" << "Database ID";
     rootItem = new TreeItem(rootData);
 
-    connectToDB();
+    connectDB();
     QSqlQueryModel uniqueParents;
     uniqueParents.setQuery("select ID,name from ParameterStructure where "
                            "dpt = 0;"); //This will return only indexers, indexes and the root node
@@ -99,9 +99,9 @@ TreeModel::TreeModel(QObject *parent)
         rootItem->appendChild(dummy);
         uniqueKeys[index] = dummy;
     }
-    db_.close();
+    disconnectDB();
 
-    connectToDB();
+    connectDB();
     QSqlQueryModel getStructure;
     getStructure.setQuery("SELECT parent.ID as parentID, child.ID as childID, parent.name as parentName, child.Name as childName "
                           "FROM ParameterStructure as Parent, ParameterStructure as child "
@@ -139,7 +139,7 @@ TreeModel::TreeModel(QObject *parent)
 
         }
     }
-    db_.close();
+    disconnectDB();
 }
 
 
@@ -150,7 +150,7 @@ TreeModel::TreeModel(bool dummy,QObject *parent)
     rootData << "Results Structure" << "Database ID";
     rootItem = new TreeItem(rootData);
 
-    connectToDB();
+    connectDB();
     QSqlQueryModel uniqueParents;
     uniqueParents.setQuery("select ID,name from ResultsStructure where "
                            "isIndexer or isIndex;"); //This will return only indexers, indexes and the root node
@@ -169,9 +169,9 @@ TreeModel::TreeModel(bool dummy,QObject *parent)
         rootItem->appendChild(dummy);
         uniqueKeys[index] = dummy;
     }
-    db_.close();
+    disconnectDB();
 
-    connectToDB();
+    connectDB();
     QSqlQueryModel getStructure;
     getStructure.setQuery("SELECT parent.ID as parentID, child.ID as childID, parent.name as parentName, child.Name as childName "
                           "FROM ResultsStructure as Parent, ResultsStructure as child "
@@ -209,7 +209,7 @@ TreeModel::TreeModel(bool dummy,QObject *parent)
 
         }
     }
-    db_.close();
+    disconnectDB();
 }
 
 
