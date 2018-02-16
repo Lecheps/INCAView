@@ -2,19 +2,19 @@
 #include "sqlInterface.h"
 #include <QDateTime>
 
-parameterValue::parameterValue(const QString & valueStr, const QString & typeStr)
+ParameterValue::ParameterValue(const QString & valueStr, const QString & typeStr)
 {
     type = parseParameterType(typeStr);
     setValue(valueStr);
 }
 
-parameterValue::parameterValue()
+ParameterValue::ParameterValue()
 {
     type = UNKNOWN;
     value.Uint = 0;
 }
 
-parameterValue::Type parameterValue::parseParameterType(const QString& typeStr)
+ParameterValue::Type ParameterValue::parseParameterType(const QString& typeStr)
 {
     if(typeStr == "DOUBLE") return DOUBLE;
     if(typeStr == "UINT") return UINT;
@@ -24,8 +24,46 @@ parameterValue::Type parameterValue::parseParameterType(const QString& typeStr)
     return UNKNOWN;
 }
 
-bool parameterValue::setValue(const QString & valueStr)
+bool ParameterValue::isValidValue(const QString & valueStr)
 {
+    bool valid = false;
+
+    switch(type)
+    {
+    case DOUBLE:
+    {
+        valueStr.toDouble(&valid);
+    } break;
+
+    case UINT:
+    {
+        valueStr.toUInt(&valid);
+    } break;
+
+    case BOOL:
+    {
+        //TODO: Not yet implemented!
+    } break;
+
+    case PTIME:
+    {
+        //TODO: Not yet implemented!
+    } break;
+
+    case UNKNOWN:
+    {
+        //Do nothing
+    } break;
+
+    }
+
+    return valid;
+}
+
+bool ParameterValue::setValue(const QString & valueStr)
+{
+    bool valid = false;
+
     switch(type)
     {
     case DOUBLE:
@@ -58,7 +96,7 @@ bool parameterValue::setValue(const QString & valueStr)
     return valid;
 }
 
-QString parameterValue::getValueString(int precision)
+QString ParameterValue::getValueString(int precision)
 {
     switch(type)
     {
@@ -92,18 +130,24 @@ QString parameterValue::getValueString(int precision)
     return "";
 }
 
-bool parameterValue::isInRange(const parameterValue& min, const parameterValue& max)
+int ParameterValue::isNotInRange(const ParameterValue& min, const ParameterValue& max)
 {
     switch(type)
     {
     case DOUBLE:
     {
-        return (value.Double >= min.value.Double) && (value.Double <= max.value.Double);
+        int result = 0;
+        if(value.Double < min.value.Double) result = -1;
+        if(value.Double > max.value.Double) result = 1;
+        return result;
     } break;
 
     case UINT:
     {
-        return (value.Uint >= min.value.Uint) && (value.Uint <= max.value.Uint);
+        int result = 0;
+        if(value.Uint < min.value.Uint) result = -1;
+        if(value.Uint > max.value.Uint) result = 1;
+        return result;
     } break;
 
     case BOOL:
@@ -113,12 +157,15 @@ bool parameterValue::isInRange(const parameterValue& min, const parameterValue& 
 
     case PTIME:
     {
-        return (value.Time >= min.value.Time ) && (value.Time  <= max.value.Time );
+        int result = 0;
+        if(value.Time < min.value.Time) result = -1;
+        if(value.Time > max.value.Time) result = 1;
+        return result;
     } break;
 
     case UNKNOWN:
     {
-        return true; //If the value is of unknown type, we should not complain about it being out of range
+        return -1;
     } break;
 
     }
@@ -128,66 +175,11 @@ bool parameterValue::isInRange(const parameterValue& min, const parameterValue& 
 
 // LAYOUTFORPARAMETER
 
-layoutForParameter::layoutForParameter(QString& name, parameterValue& value, parameterValue& min, parameterValue& max)
+Parameter::Parameter(const QString& name, ParameterValue& value, ParameterValue& min, ParameterValue& max)
 {
-    //layout = new QHBoxLayout;
-    parameterNameView = new QLabel;
-    parameterValueView = new QLineEdit;
-    parameterMinView = new QLabel;
-    parameterMaxView = new QLabel;
-    parameterNameView->setText(name);
-
     this->min = min; // We store the values for these, not just their text fields, so that it is efficient to check when edited values fall within range.
     this->max = max;
     this->value = value;
-
-    this->valueIsValidAndInRange = value.isValid() && value.isInRange(min, max);
-
-    QObject::connect(parameterValueView, &QLineEdit::textEdited, this, &layoutForParameter::valueEditedReceiveMessage);
-
-    int precision = 5;
-    parameterValueView->setText(value.getValueString(precision));
-    parameterMinView->setText(min.getValueString(precision));
-    parameterMaxView->setText(max.getValueString(precision));
-}
-
-layoutForParameter::~layoutForParameter()
-{
-    delete parameterNameView;
-    delete parameterValueView;
-    delete parameterMinView;
-    delete parameterMaxView;
-}
-
-void layoutForParameter::addToGrid(QGridLayout* grid, int rowNumber)
-{
-    grid->addWidget(parameterNameView,rowNumber,0,1,1);
-    grid->addWidget(parameterValueView,rowNumber,1,1,1);
-    grid->addWidget(parameterMinView,rowNumber,2,1,1);
-    grid->addWidget(parameterMaxView,rowNumber,3,1,1);
-}
-
-void layoutForParameter::setVisible(bool isVisible)
-{
-    parameterNameView->setVisible(isVisible);
-    parameterValueView->setVisible(isVisible);
-    parameterMinView->setVisible(isVisible);
-    parameterMaxView->setVisible(isVisible);
-}
-
-void layoutForParameter::valueEditedReceiveMessage(const QString& newValue)
-{
-    valueIsValidAndInRange = value.setValue(newValue) && value.isInRange(min, max);
-
-    if(valueIsValidAndInRange)
-    {
-        parameterValueView->setStyleSheet("QLineEdit { color : black; }");
-
-        emit signalValueWasEdited(newValue);
-    }
-    else
-    {
-        parameterValueView->setStyleSheet("QLineEdit { color : red; }");
-    }
+    this->name = name;
 }
 

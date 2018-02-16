@@ -23,7 +23,7 @@
          <widget class="QTreeView" name="treeView"/>
         </item>
         <item>
-         <widget class="QListView" name="listViewParameters"/>
+         <widget class="QTableView" name="tableViewParameters"/>
         </item>
         <item>
          <widget class="QTreeView" name="treeViewResults"/>

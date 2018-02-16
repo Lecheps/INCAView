@@ -7,8 +7,6 @@ MainWindow::MainWindow(QWidget *parent) :
     ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
-    tabParameterLayout_ = new QGridLayout;//new QGridLayout;//QFormLayout;QVBoxLayout;
-    ui->listViewParameters->setLayout(tabParameterLayout_);
 
     ui->pushSave->setEnabled(false);
     ui->pushSaveAs->setEnabled(false);
@@ -36,7 +34,7 @@ void MainWindow::on_pushLoad_clicked()
             if(stuffHasBeenEditedSinceLastSave)
             {
                 QMessageBox::StandardButton resBtn = QMessageBox::question( this, tr("Opening new database without saving."),
-                                                                            tr("Do you really want to open a new database without saving the changes made to the one that is open?\n"),
+                                                                            tr("Do you want to open a new database without saving the changes made to the one that is open?\n"),
                                                                             QMessageBox::Yes | QMessageBox::No ,
                                                                             QMessageBox::Yes);
                 if (resBtn == QMessageBox::Yes) {
@@ -53,20 +51,7 @@ void MainWindow::on_pushLoad_clicked()
                     // A DB is already loaded. Remove the old loaded data before loading in the new one.
                     delete treeParameters_;
                     delete treeResults_;
-
-
-                    for(auto& key_value : layoutMap_)
-                    {
-                        delete key_value.second;
-                    }
-                    layoutMap_.clear();
-
-                    //BUG!: Why does this not clear all the header labels?
-                    ui->listViewParameters->layout()->deleteLater();
-
-                    delete tabParameterLayout_;
-                    tabParameterLayout_ = new QGridLayout;
-                    ui->listViewParameters->setLayout(tabParameterLayout_);
+                    delete parameterModel;
                 }
 
                 stuffHasBeenEditedSinceLastSave = false;
@@ -82,7 +67,11 @@ void MainWindow::on_pushLoad_clicked()
 
                 setDBPath(tempWorkingDBPath);
 
-                populateLayoutMap(tabParameterLayout_);
+                parameterModel = new ParameterModel();
+                populateParameterModel();
+                ui->tableViewParameters->setModel(parameterModel);
+                ui->tableViewParameters->verticalHeader()->hide();
+
                 treeParameters_ = new TreeModel();
                 treeResults_ = new TreeModel(true);
 
@@ -148,13 +137,13 @@ bool MainWindow::tryToSave(const QString& oldpath, const QString& newpath)
 {
     bool reallySave = false;
 
-    if(areAllParametersValid())
+    if(parameterModel->areAllParametersValidAndInRange())
     {
         reallySave = true;
     }
     else
     {
-        QMessageBox msgBox(QMessageBox::Warning, tr("Invalid parameters"), tr("Not all parameters are set with valid values. Parameters will be saved with their last valid value. Save anyway?"));
+        QMessageBox msgBox(QMessageBox::Warning, tr("Invalid parameters"), tr("Not all parameters values are in the [min, max] range. Save anyway?"));
         QPushButton *saveButton = msgBox.addButton(tr("Save"), QMessageBox::ActionRole);
         QPushButton *abortButton = msgBox.addButton(QMessageBox::Cancel);
 
@@ -190,13 +179,13 @@ void MainWindow::on_pushRun_clicked()
 {
     if(pathToDBIsSet()) // Just for safety. The button is disabled in this case.
     {
-        if(areAllParametersValid())
+        if(parameterModel->areAllParametersValidAndInRange())
         {
             runINCA();
         }
         else
         {
-            QMessageBox msgBox(QMessageBox::Warning, tr("Invalid parameters"), tr("Not all parameters are set with valid values. Run with most recent valid values?"));
+            QMessageBox msgBox(QMessageBox::Warning, tr("Invalid parameters"), tr("Not all parameters are in the [min, max] range. Run the model anyway?"));
             QPushButton *runButton = msgBox.addButton(tr("Run model"), QMessageBox::ActionRole);
             QPushButton *abortButton = msgBox.addButton(QMessageBox::Cancel);
 
@@ -216,7 +205,7 @@ void MainWindow::closeEvent (QCloseEvent *event)
     if(stuffHasBeenEditedSinceLastSave)
     {
         QMessageBox::StandardButton resBtn = QMessageBox::question( this, tr("Closing INCA view without saving."),
-                                                                    tr("Do you really want to exit without saving the changes made to the database?\n"),
+                                                                    tr("Do you want to exit without saving the changes made to the database?\n"),
                                                                     QMessageBox::Yes | QMessageBox::No ,
                                                                     QMessageBox::Yes);
         if (resBtn != QMessageBox::Yes) {
@@ -237,12 +226,8 @@ void MainWindow::runINCA()
 
 void MainWindow::on_treeView_clicked(const QModelIndex &index)
 {
-    for (auto & ID : itemsInGrid_)
-    {
-        layoutMap_[ID]->setVisible(false);
-    }
+    parameterModel->clearVisibleParameters();
 
-    itemsInGrid_.clear();
     connectDB();
     auto idx = index.model()->index(index.row(),index.column() + 1, index.parent());
     int ID = (treeParameters_->itemData(idx))[0].toInt();
@@ -261,9 +246,12 @@ void MainWindow::on_treeView_clicked(const QModelIndex &index)
     while (query.next())
     {
         int ID = query.value(1).toInt();
-        layoutMap_[ID]->setVisible(true);
-        itemsInGrid_.push_back(ID);
+        parameterModel->setParameterVisible(ID);
     }
+
+    ui->tableViewParameters->resizeColumnToContents(2);
+    ui->tableViewParameters->resizeColumnToContents(3);
+
     disconnectDB();
 
 }
@@ -281,8 +269,6 @@ void MainWindow::on_treeViewResults_clicked(const QModelIndex &index)
     query.bindValue(":ID",ID);
     query.exec();
 
-    //qDebug() << ID << " -> " << query.size();
-    //qDebug() << query.size();
 
     //TODO: Currently times are just for debugging!!! Should read actual times from database.
     double starttime = QDateTime::currentDateTime().toTime_t();
@@ -327,26 +313,10 @@ void MainWindow::on_treeViewResults_clicked(const QModelIndex &index)
     ui->widgetPlot->xAxis->setRange(starttime, starttime+24*3600*(cnt-1));
 
     ui->widgetPlot->replot();
-
-    //ui->tabWidget->setCurrentIndex(1);
-
 }
 
-void MainWindow::populateLayoutMap(QGridLayout* grid)
+void MainWindow::populateParameterModel()
 {
-    //NOTE: Rudimentary headers for the parameter view. They currently don't look in style with the rest of the views.
-    QStringList headerLabels;
-    headerLabels << "Name" << "Value" << "Min" << "Max";
-    int col = 0;
-    for (auto& label : headerLabels)
-    {
-        QLabel *qlabel = new QLabel(label);
-        qlabel->setMaximumHeight(20);
-        qlabel->setStyleSheet("background-color: silver; color: black; border: 1px solid #6c6c6c;");
-        grid->addWidget(qlabel, 0, col++, 1, 1);
-    }
-
-
     connectDB();
     QSqlQuery query;
     query.prepare(   "SELECT "
@@ -356,29 +326,23 @@ void MainWindow::populateLayoutMap(QGridLayout* grid)
                     "    ON ParameterStructure.ID = ParameterValues.ID; "
                 );
     query.exec();
-    int cnt = 0;
     while (query.next())
     {
-        int ID = query.value(2).toInt();
-        QString name = query.value(0).toString();
-        parameterValue value(query.value(5).toString(), query.value(1).toString());
-        parameterValue min(query.value(3).toString(), query.value(1).toString());;
-        parameterValue max(query.value(4).toString(), query.value(1).toString());;
-
-        layoutForParameter *layout = new layoutForParameter(name,value,min,max);
-        layout->addToGrid(grid, cnt+1);
-        layout->setVisible(false);
-
-        QObject::connect(layout, &layoutForParameter::signalValueWasEdited,
-                         std::bind(&MainWindow::parameterWasEdited, this, std::placeholders::_1, ID));
-
-        layoutMap_[ID] = layout;
-        ++cnt;
+        parameterModel->addParameter(
+                    query.value(2).toInt(), // ID
+                    query.value(0).toString(), // name
+                    query.value(1).toString(), // type
+                    query.value(5).toString(), // value
+                    query.value(3).toString(), // min
+                    query.value(4).toString() // max
+                    );
     }
     disconnectDB();
+
+    QObject::connect(parameterModel, &ParameterModel::parameterWasEdited, this, &MainWindow::parameterWasEdited);
 }
 
-void MainWindow::parameterWasEdited(const QString& newValue, int dbID)
+void MainWindow::parameterWasEdited(const QString& newValue, int dbID, bool inrange)
 {
     connectDB();
 
@@ -398,19 +362,6 @@ void MainWindow::parameterWasEdited(const QString& newValue, int dbID)
     toggleStuffHasBeenEditedSinceLastSave(true);
 }
 
-bool MainWindow::areAllParametersValid()
-{
-    bool result = true;
-    for(auto& key_value : layoutMap_)
-    {
-        if(!key_value.second->isValueValidAndInRange())
-        {
-            result = false;
-            break;
-        }
-    }
-    return result;
-}
 
 void MainWindow::toggleStuffHasBeenEditedSinceLastSave(bool newval)
 {

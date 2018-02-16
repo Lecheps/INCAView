@@ -28,13 +28,6 @@ void sqlInterface::setDBPath(const QString& path)
     dbIsSet_ = true;
 }
 
-/*
-void sqlInterface::copyDBToLocation(const QString& newPath)
-{
-    QFile::copy(pathToDB_, newPath);
-}
-*/
-
 QSqlDatabase sqlInterface::db_;
 QSqlQueryModel sqlInterface::queryModel_;
 QString sqlInterface::pathToDB_;

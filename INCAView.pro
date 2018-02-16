@@ -19,14 +19,16 @@ SOURCES += main.cpp\
     treeitem.cpp \
     treemodel.cpp \
     qcustomplot.cpp \
-    parameter.cpp
+    parameter.cpp \
+    parametermodel.cpp
 
 HEADERS  += mainwindow.h \
     sqlInterface.h \
     treemodel.h \
     treeitem.h \
     qcustomplot.h \
-    parameter.h
+    parameter.h \
+    parametermodel.h
 
 FORMS    += mainwindow.ui
 

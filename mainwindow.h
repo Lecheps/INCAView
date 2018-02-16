@@ -7,6 +7,7 @@
 #include "QFileDialog"
 #include <QSqlTableModel>
 #include "treemodel.h"
+#include "parametermodel.h"
 #include <QFile>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -40,12 +41,10 @@ private slots:
 
 private:
 
-    void populateLayoutMap(QGridLayout*);
-    void parameterWasEdited(const QString&, int);
+    void populateParameterModel();
+    void parameterWasEdited(const QString&, int, bool inrange);
 
     void toggleStuffHasBeenEditedSinceLastSave(bool);
-
-    bool areAllParametersValid();
 
     void runINCA();
 
@@ -55,10 +54,8 @@ private:
     Ui::MainWindow *ui;
 
     TreeModel *treeParameters_, *treeResults_;
-//    QVBoxLayout* tabParameterLayout_;
-    QGridLayout* tabParameterLayout_;
-    std::vector<int> itemsInGrid_;
-    std::map<int,layoutForParameter*> layoutMap_;
+
+    ParameterModel *parameterModel;
 
     const QString tempWorkingDBPath = "__temp.db";
     QString loadedDBPath_;
