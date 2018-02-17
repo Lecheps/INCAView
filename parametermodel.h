@@ -19,7 +19,7 @@ public:
     bool setData(const QModelIndex & index, const QVariant & value, int role = Qt::EditRole) override;
     Qt::ItemFlags flags(const QModelIndex &index) const;
 
-    bool areAllParametersValidAndInRange() const;
+    bool areAllParametersInRange() const;
     void addParameter(int, const QString&, const QString&, const QString&, const QString&, const QString&);
     void clearVisibleParameters();
     void setParameterVisible(int);
@@ -27,7 +27,7 @@ private:
     std::vector<int> visibleParamID_;
     std::map<int, Parameter*> IDtoParam_;
 signals:
-    void parameterWasEdited(const QString&, int, bool);
+    void parameterWasEdited(const QString&, int);
 };
 
 #endif // PARAMETERVIEWMODEL_H

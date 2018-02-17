@@ -13,6 +13,8 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->pushRun->setEnabled(false);
 
     this->setWindowTitle("INCA view");
+
+    lineEditDelegate = new LineEditDelegate();
 }
 
 MainWindow::~MainWindow()
@@ -51,7 +53,7 @@ void MainWindow::on_pushLoad_clicked()
                     // A DB is already loaded. Remove the old loaded data before loading in the new one.
                     delete treeParameters_;
                     delete treeResults_;
-                    delete parameterModel;
+                    delete parameterModel_;
                 }
 
                 stuffHasBeenEditedSinceLastSave = false;
@@ -67,10 +69,14 @@ void MainWindow::on_pushLoad_clicked()
 
                 setDBPath(tempWorkingDBPath);
 
-                parameterModel = new ParameterModel();
+                parameterModel_ = new ParameterModel();
                 populateParameterModel();
-                ui->tableViewParameters->setModel(parameterModel);
+                ui->tableViewParameters->setModel(parameterModel_);
                 ui->tableViewParameters->verticalHeader()->hide();
+                QObject::connect(parameterModel_, &ParameterModel::parameterWasEdited, this, &MainWindow::parameterWasEdited);
+
+                ui->tableViewParameters->setItemDelegateForColumn(1, lineEditDelegate);
+                ui->tableViewParameters->setEditTriggers(QAbstractItemView::CurrentChanged);
 
                 treeParameters_ = new TreeModel();
                 treeResults_ = new TreeModel(true);
@@ -97,7 +103,7 @@ void MainWindow::on_pushSave_clicked()
 {
     if(pathToDBIsSet()) // Just for safety. The button is disabled in this case.
     {
-        tryToSave(tempWorkingDBPath, loadedDBPath_);
+        if(saveCheckParameters()) tryToSave(tempWorkingDBPath, loadedDBPath_);
     }
 }
 
@@ -105,19 +111,61 @@ void MainWindow::on_pushSaveAs_clicked()
 {
     if(pathToDBIsSet()) // Just for safety. The button is disabled in this case.
     {
-        QString pathToSave = QFileDialog::getSaveFileName(this, tr("Select location to store a backup copy of the database"), "c:/Users/Magnus/Documents/INCAView/", tr("Database files (*.db)"));
-
-        if(!pathToSave.isEmpty()&& !pathToSave.isNull()) //In case the user cancel, or no to the overwrite question.
+        if(saveCheckParameters())
         {
-            if(tryToSave(tempWorkingDBPath, pathToSave))
+            QString pathToSave = QFileDialog::getSaveFileName(this, tr("Select location to store a backup copy of the database"), "c:/Users/Magnus/Documents/INCAView/", tr("Database files (*.db)"));
+
+            if(!pathToSave.isEmpty()&& !pathToSave.isNull()) //In case the user cancel, or no to the overwrite question.
             {
-                loadedDBPath_ = pathToSave;
-                setWindowTitle("INCA view: " + loadedDBPath_);
+                if(tryToSave(tempWorkingDBPath, pathToSave))
+                {
+                    loadedDBPath_ = pathToSave;
+                    setWindowTitle("INCA view: " + loadedDBPath_);
+                }
             }
         }
     }
 }
 
+bool MainWindow::saveCheckParameters()
+{
+    bool reallySave = false;
+
+    if(parameterModel_->areAllParametersInRange())
+    {
+        reallySave = true;
+    }
+    else
+    {
+        QMessageBox msgBox(QMessageBox::Warning, tr("Invalid parameters"), tr("Not all parameters values are in the [min, max] range. Save anyway?"));
+        QPushButton *saveButton = msgBox.addButton(tr("Save"), QMessageBox::ActionRole);
+        QPushButton *abortButton = msgBox.addButton(QMessageBox::Cancel);
+
+        msgBox.exec();
+
+        if (msgBox.clickedButton() == saveButton) {
+            reallySave = true;
+        } else if (msgBox.clickedButton() == abortButton) {
+            reallySave = false;
+        }
+    }
+
+    return reallySave;
+}
+
+bool MainWindow::tryToSave(const QString& oldpath, const QString& newpath)
+{
+    bool saveWorked = copyAndOverwriteFile(oldpath, newpath);
+    if(saveWorked)
+    {
+        toggleStuffHasBeenEditedSinceLastSave(false);
+    }
+    else
+    {
+        QMessageBox::warning(this, "Save failed", "The operating system failed to save the file", QMessageBox::Ok);
+    }
+    return saveWorked;
+}
 
 bool MainWindow::copyAndOverwriteFile(const QString& oldpath, const QString& newpath)
 {
@@ -133,53 +181,14 @@ bool MainWindow::copyAndOverwriteFile(const QString& oldpath, const QString& new
     return success;
 }
 
-bool MainWindow::tryToSave(const QString& oldpath, const QString& newpath)
-{
-    bool reallySave = false;
 
-    if(parameterModel->areAllParametersValidAndInRange())
-    {
-        reallySave = true;
-    }
-    else
-    {
-        QMessageBox msgBox(QMessageBox::Warning, tr("Invalid parameters"), tr("Not all parameters values are in the [min, max] range. Save anyway?"));
-        QPushButton *saveButton = msgBox.addButton(tr("Save"), QMessageBox::ActionRole);
-        QPushButton *abortButton = msgBox.addButton(QMessageBox::Cancel);
-
-        msgBox.exec();
-
-        if (msgBox.clickedButton() == saveButton) {
-            reallySave = true;
-        } else if (msgBox.clickedButton() == abortButton) {
-            // abort
-        }
-    }
-
-    bool saveWorked = false;
-    if(reallySave)
-    {
-        saveWorked = copyAndOverwriteFile(oldpath, newpath);
-
-        if(saveWorked)
-        {
-            toggleStuffHasBeenEditedSinceLastSave(false);
-        }
-        else
-        {
-            QMessageBox::warning(this, "Save failed", "The operating system failed to save the file", QMessageBox::Ok);
-        }
-    }
-
-    return saveWorked;
-}
 
 
 void MainWindow::on_pushRun_clicked()
 {
     if(pathToDBIsSet()) // Just for safety. The button is disabled in this case.
     {
-        if(parameterModel->areAllParametersValidAndInRange())
+        if(parameterModel_->areAllParametersInRange())
         {
             runINCA();
         }
@@ -226,7 +235,7 @@ void MainWindow::runINCA()
 
 void MainWindow::on_treeView_clicked(const QModelIndex &index)
 {
-    parameterModel->clearVisibleParameters();
+    parameterModel_->clearVisibleParameters();
 
     connectDB();
     auto idx = index.model()->index(index.row(),index.column() + 1, index.parent());
@@ -246,7 +255,7 @@ void MainWindow::on_treeView_clicked(const QModelIndex &index)
     while (query.next())
     {
         int ID = query.value(1).toInt();
-        parameterModel->setParameterVisible(ID);
+        parameterModel_->setParameterVisible(ID);
     }
 
     ui->tableViewParameters->resizeColumnToContents(2);
@@ -328,7 +337,7 @@ void MainWindow::populateParameterModel()
     query.exec();
     while (query.next())
     {
-        parameterModel->addParameter(
+        parameterModel_->addParameter(
                     query.value(2).toInt(), // ID
                     query.value(0).toString(), // name
                     query.value(1).toString(), // type
@@ -338,11 +347,9 @@ void MainWindow::populateParameterModel()
                     );
     }
     disconnectDB();
-
-    QObject::connect(parameterModel, &ParameterModel::parameterWasEdited, this, &MainWindow::parameterWasEdited);
 }
 
-void MainWindow::parameterWasEdited(const QString& newValue, int dbID, bool inrange)
+void MainWindow::parameterWasEdited(const QString& newValue, int dbID)
 {
     connectDB();
 

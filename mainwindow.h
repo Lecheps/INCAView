@@ -8,6 +8,7 @@
 #include <QSqlTableModel>
 #include "treemodel.h"
 #include "parametermodel.h"
+#include "lineeditdelegate.h"
 #include <QFile>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -42,20 +43,22 @@ private slots:
 private:
 
     void populateParameterModel();
-    void parameterWasEdited(const QString&, int, bool inrange);
+    void parameterWasEdited(const QString&, int);
 
     void toggleStuffHasBeenEditedSinceLastSave(bool);
 
     void runINCA();
 
     static bool copyAndOverwriteFile(const QString&, const QString&);
+    bool saveCheckParameters();
     bool tryToSave(const QString&, const QString&);
 
     Ui::MainWindow *ui;
 
     TreeModel *treeParameters_, *treeResults_;
 
-    ParameterModel *parameterModel;
+    ParameterModel *parameterModel_;
+    LineEditDelegate *lineEditDelegate;
 
     const QString tempWorkingDBPath = "__temp.db";
     QString loadedDBPath_;

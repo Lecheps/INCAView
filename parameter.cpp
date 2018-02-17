@@ -62,18 +62,28 @@ bool ParameterValue::isValidValue(const QString & valueStr)
 
 bool ParameterValue::setValue(const QString & valueStr)
 {
-    bool valid = false;
+    bool changed = false;
 
     switch(type)
     {
     case DOUBLE:
     {
-        value.Double = valueStr.toDouble(&valid);
+        double newVal = valueStr.toDouble();
+        if(value.Double != newVal)
+        {
+            value.Double = valueStr.toDouble();
+            changed = true;
+        }
     } break;
 
     case UINT:
     {
-        value.Uint = valueStr.toUInt(&valid);
+        uint64_t newVal = valueStr.toUInt();
+        if(value.Uint != newVal)
+        {
+            value.Uint = newVal;
+            changed = true;
+        }
     } break;
 
     case BOOL:
@@ -93,7 +103,7 @@ bool ParameterValue::setValue(const QString & valueStr)
 
     }
 
-    return valid;
+    return changed;
 }
 
 QString ParameterValue::getValueString(int precision)

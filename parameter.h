@@ -30,7 +30,7 @@ public:
 
     bool isValidValue(const QString &);
     bool setValue(const QString &);
-    QString getValueString(int precision = 3);
+    QString getValueString(int precision = 10);
     //Type getType() { return type; }
     int isNotInRange(const ParameterValue&, const ParameterValue&);
 

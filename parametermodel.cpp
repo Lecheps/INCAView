@@ -31,10 +31,11 @@ QVariant ParameterModel::data(const QModelIndex &index, int role) const
     switch(role)
     {
     case Qt::DisplayRole:
+    case Qt::EditRole:
     {
         int ID = visibleParamID_[index.row()];
         Parameter* layout = IDtoParam_.at(ID);
-        int precision = 5;
+        int precision = 10;
         switch(index.column())
         {
             case 0:
@@ -122,10 +123,13 @@ bool ParameterModel::setData(const QModelIndex & index, const QVariant & value, 
             bool valid = param->value.isValidValue(strVal);
             if(valid)
             {
-                param->value.setValue(strVal);
+                bool valueWasChanged = param->value.setValue(strVal);
 
-                emit parameterWasEdited(strVal, ID, param->IsInRange());
-                return true;
+                if(valueWasChanged)
+                {
+                    emit parameterWasEdited(strVal, ID);
+                    return true;
+                }
             }
             return false;
         }
@@ -146,7 +150,7 @@ Qt::ItemFlags ParameterModel::flags(const QModelIndex &index) const
     return QAbstractTableModel::flags(index);
 }
 
-bool ParameterModel::areAllParametersValidAndInRange() const
+bool ParameterModel::areAllParametersInRange() const
 {
     bool result = true;
     for(auto& key_value : IDtoParam_)

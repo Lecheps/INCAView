@@ -20,7 +20,8 @@ SOURCES += main.cpp\
     treemodel.cpp \
     qcustomplot.cpp \
     parameter.cpp \
-    parametermodel.cpp
+    parametermodel.cpp \
+    lineeditdelegate.cpp
 
 HEADERS  += mainwindow.h \
     sqlInterface.h \
@@ -28,7 +29,8 @@ HEADERS  += mainwindow.h \
     treeitem.h \
     qcustomplot.h \
     parameter.h \
-    parametermodel.h
+    parametermodel.h \
+    lineeditdelegate.h
 
 FORMS    += mainwindow.ui
 

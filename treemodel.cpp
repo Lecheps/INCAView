@@ -69,7 +69,7 @@ TreeModel::TreeModel(const QString &data, QObject *parent)
     QList<QVariant> rootData;
     rootData << "Title" << "Summary";
     rootItem = new TreeItem(rootData);
-    setupModelData(data.split(QString("\n")), rootItem);
+    //setupModelData(data.split(QString("\n")), rootItem);
 }
 
 TreeModel::TreeModel(QObject *parent)
@@ -94,7 +94,7 @@ TreeModel::TreeModel(QObject *parent)
         QVariant name(QString(str.c_str()));
         data << name << index;
         qDebug() << index;
-        TreeItem* dummy = new TreeItem(data,rootItem);
+        TreeItem* dummy = new TreeItem(data, rootItem);
 
         rootItem->appendChild(dummy);
         uniqueKeys[index] = dummy;
@@ -314,7 +314,7 @@ int TreeModel::rowCount(const QModelIndex &parent) const
     return parentItem->childCount();
 }
 
-
+/*
 void TreeModel::setupModelData(const QStringList &lines, TreeItem *parent)
 {
     QList<TreeItem*> parents;
@@ -364,3 +364,4 @@ void TreeModel::setupModelData(const QStringList &lines, TreeItem *parent)
         ++number;
     }
 }
+*/
