@@ -56,6 +56,7 @@
 #include <QVariant>
 #include <QSqlQueryModel>
 #include <sqlInterface.h>
+#include "unordered_map"
 
 class TreeItem;
 
@@ -65,9 +66,7 @@ class TreeModel : public QAbstractItemModel, virtual protected sqlInterface
     Q_OBJECT
 
 public:
-    explicit TreeModel(const QString &data, QObject *parent = 0);
-    explicit TreeModel(QObject* parent = 0);
-    explicit TreeModel(bool, QObject *parent = 0);
+    explicit TreeModel(const QString &, const QString &, bool, QObject* parent = 0);
     ~TreeModel();
 
     QVariant data(const QModelIndex &index, int role) const override;
@@ -81,6 +80,8 @@ public:
     int columnCount(const QModelIndex &parent = QModelIndex()) const override;
 
 private:
+    void addItem(const QString &name, int ID, int parentID = -1);
+    std::unordered_map<int,TreeItem*> IDtoTreeItem_;
 
     TreeItem *rootItem;
 };

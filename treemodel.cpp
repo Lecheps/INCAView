@@ -57,161 +57,52 @@
 
 #include "treeitem.h"
 #include "treemodel.h"
-
-
 #include <QStringList>
 #include <QDebug>
-#include "unordered_map"
 
-TreeModel::TreeModel(const QString &data, QObject *parent)
+TreeModel::TreeModel(const QString & tableName, const QString& colName, bool indexersAndIndexesOnly, QObject *parent)
     : QAbstractItemModel(parent)
 {
     QList<QVariant> rootData;
-    rootData << "Title" << "Summary";
+    rootData << colName << "Database ID";
     rootItem = new TreeItem(rootData);
-    //setupModelData(data.split(QString("\n")), rootItem);
-}
+    IDtoTreeItem_[-518342] = rootItem;  // -518342 is just a random number that we assume nobody will use as an actual ID value.
 
-TreeModel::TreeModel(QObject *parent)
-    : QAbstractItemModel(parent)
-{
-    QList<QVariant> rootData;
-    rootData << "Parameter Structure" << "Database ID";
-    rootItem = new TreeItem(rootData);
+    QString onlyIndexersAndIndexes = indexersAndIndexesOnly ? "AND (child.isIndexer is not null OR child.isIndex is not null) " : " ";
 
     connectDB();
-    QSqlQueryModel uniqueParents;
-    uniqueParents.setQuery("select ID,name from ParameterStructure where "
-                           "dpt = 0;"); //This will return only indexers, indexes and the root node
-    std::unordered_map<int,TreeItem*> uniqueKeys;
-    for (int i = 0; i < uniqueParents.rowCount(); ++i)
-    {
-        QModelIndex keyIndex = uniqueParents.index(i, 0);
-        QModelIndex keyString = uniqueParents.index(i,1);
-        int index = uniqueParents.data(keyIndex).toInt();
-        std::string str = uniqueParents.data(keyString).toString().toStdString();
-        QList<QVariant> data;
-        QVariant name(QString(str.c_str()));
-        data << name << index;
-        qDebug() << index;
-        TreeItem* dummy = new TreeItem(data, rootItem);
-
-        rootItem->appendChild(dummy);
-        uniqueKeys[index] = dummy;
-    }
-    disconnectDB();
-
-    connectDB();
-    QSqlQueryModel getStructure;
-    getStructure.setQuery("SELECT parent.ID as parentID, child.ID as childID, parent.name as parentName, child.Name as childName "
-                          "FROM ParameterStructure as Parent, ParameterStructure as child "
+    QSqlQueryModel query;
+    query.setQuery("SELECT parent.ID as parentID, child.ID, child.Name "
+                          "FROM " + tableName + " as parent, " + tableName + " as child "
                           "WHERE child.lft > parent.lft "
                           "AND child.rgt < parent.rgt "
-                          "AND child.dpt = parent.dpt + 1 "
-                          "AND child.type is null;"
+                          "AND child.dpt = parent.dpt + 1 " + onlyIndexersAndIndexes +
+                          "UNION "
+                          "SELECT -518342 as parentID, child.ID, child.Name "
+                          "FROM " + tableName + " as child "
+                          "WHERE child.dpt = 0;"
                           );
-    for (int i = 0; i < getStructure.rowCount(); ++i)
+
+    for (int i = 0; i < query.rowCount(); ++i)
     {
-        QModelIndex parentIndex = getStructure.index(i, 0);
-        QModelIndex childIndex = getStructure.index(i, 1);
-        QModelIndex parentStrIndex = getStructure.index(i, 2);
-        QModelIndex childStrIndex = getStructure.index(i, 3);
-        int parentKey = getStructure.data(parentIndex).toInt();
-        int childKey = getStructure.data(childIndex).toInt();
-        QString parentStrKey = getStructure.data(parentStrIndex).toString();
-        QString childStrKey = getStructure.data(childStrIndex).toString();
-        QList<QVariant> parentData, childData;
-        QVariant parentName(parentStrKey);
-        QVariant childName(childStrKey);
-        parentData << parentName << parentKey;
-        childData << childName << childKey;
+        int parentID = query.data(query.index(i, 0)).toInt();
+        int childID = query.data(query.index(i, 1)).toInt();
+        QString childName = query.data(query.index(i, 2)).toString();
 
-        if (parentKey == 1)
-        {
-            TreeItem* childPnt = new TreeItem(childData,uniqueKeys[1]);
-            uniqueKeys[childKey] = childPnt;
-            uniqueKeys[1]->appendChild(childPnt);
-        }
-        else
-        {
-            uniqueKeys[childKey] = new TreeItem(childData,uniqueKeys[parentKey]);
-            uniqueKeys[parentKey]->appendChild(uniqueKeys[childKey]);
-
-        }
+        addItem(childName, childID, parentID);
     }
     disconnectDB();
 }
 
-
-TreeModel::TreeModel(bool dummy,QObject *parent)
-    : QAbstractItemModel(parent)
+void TreeModel::addItem(const QString &name, int ID, int parentID)
 {
-    QList<QVariant> rootData;
-    rootData << "Results Structure" << "Database ID";
-    rootItem = new TreeItem(rootData);
-
-    connectDB();
-    QSqlQueryModel uniqueParents;
-    uniqueParents.setQuery("select ID,name from ResultsStructure where "
-                           "isIndexer or isIndex;"); //This will return only indexers, indexes and the root node
-    std::unordered_map<int,TreeItem*> uniqueKeys;
-    for (int i = 0; i < uniqueParents.rowCount(); ++i)    {
-        QModelIndex keyIndex = uniqueParents.index(i, 0);
-        QModelIndex keyString = uniqueParents.index(i,1);
-        int index = uniqueParents.data(keyIndex).toInt();
-        std::string str = uniqueParents.data(keyString).toString().toStdString();
-        QList<QVariant> data;
-        QVariant name(QString(str.c_str()));
-        data << name << index;
-        qDebug() << index;
-        TreeItem* dummy = new TreeItem(data,rootItem);
-
-        rootItem->appendChild(dummy);
-        uniqueKeys[index] = dummy;
-    }
-    disconnectDB();
-
-    connectDB();
-    QSqlQueryModel getStructure;
-    getStructure.setQuery("SELECT parent.ID as parentID, child.ID as childID, parent.name as parentName, child.Name as childName "
-                          "FROM ResultsStructure as Parent, ResultsStructure as child "
-                          "WHERE child.lft > parent.lft "
-                          "AND child.rgt < parent.rgt "
-                          "AND child.dpt = parent.dpt + 1 "
-                          "AND (child.isIndexer is null AND child.isIndex is null)"
-                          );
-    for (int i = 0; i < getStructure.rowCount(); ++i)
-    {
-        QModelIndex parentIndex = getStructure.index(i, 0);
-        QModelIndex childIndex = getStructure.index(i, 1);
-        QModelIndex parentStrIndex = getStructure.index(i, 2);
-        QModelIndex childStrIndex = getStructure.index(i, 3);
-        int parentKey = getStructure.data(parentIndex).toInt();
-        int childKey = getStructure.data(childIndex).toInt();
-        QString parentStrKey = getStructure.data(parentStrIndex).toString();
-        QString childStrKey = getStructure.data(childStrIndex).toString();
-        QList<QVariant> parentData, childData;
-        QVariant parentName(parentStrKey);
-        QVariant childName(childStrKey);
-        parentData << parentName << parentKey;
-        childData << childName << childKey;
-
-        if (parentKey == 1)
-        {
-            TreeItem* childPnt = new TreeItem(childData,uniqueKeys[1]);
-            uniqueKeys[childKey] = childPnt;
-            uniqueKeys[1]->appendChild(childPnt);
-        }
-        else
-        {
-            uniqueKeys[childKey] = new TreeItem(childData,uniqueKeys[parentKey]);
-            uniqueKeys[parentKey]->appendChild(uniqueKeys[childKey]);
-
-        }
-    }
-    disconnectDB();
+    QList<QVariant> itemData;
+    itemData << name << ID;
+    TreeItem* parent = IDtoTreeItem_[parentID];
+    TreeItem* item = new TreeItem(itemData, parent);
+    IDtoTreeItem_[ID] = item;
+    parent->appendChild(item);
 }
-
 
 TreeModel::~TreeModel()
 {

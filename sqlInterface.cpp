@@ -1,5 +1,10 @@
 #include "sqlInterface.h"
 
+QSqlDatabase sqlInterface::db_;
+QSqlQueryModel sqlInterface::queryModel_;
+QString sqlInterface::pathToDB_;
+bool sqlInterface::dbIsSet_ = false;
+
 sqlInterface::sqlInterface()
 {
    db_ = QSqlDatabase::addDatabase("QSQLITE");
@@ -27,8 +32,3 @@ void sqlInterface::setDBPath(const QString& path)
     pathToDB_ = path;
     dbIsSet_ = true;
 }
-
-QSqlDatabase sqlInterface::db_;
-QSqlQueryModel sqlInterface::queryModel_;
-QString sqlInterface::pathToDB_;
-bool sqlInterface::dbIsSet_ = false;

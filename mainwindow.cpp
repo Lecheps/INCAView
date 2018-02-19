@@ -12,7 +12,7 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->pushSaveAs->setEnabled(false);
     ui->pushRun->setEnabled(false);
 
-    this->setWindowTitle("INCA view");
+    resetWindowTitle();
 
     lineEditDelegate = new LineEditDelegate();
 }
@@ -20,6 +20,21 @@ MainWindow::MainWindow(QWidget *parent) :
 MainWindow::~MainWindow()
 {
     delete ui;
+}
+
+void MainWindow::resetWindowTitle()
+{
+    if(pathToDBIsSet() && stuffHasBeenEditedSinceLastSave)
+    {
+        setWindowTitle("*" + loadedDBPath_ + " - INCA View");
+        return;
+    }
+    else if(pathToDBIsSet())
+    {
+        setWindowTitle(loadedDBPath_ + " - INCA View");
+        return;
+    }
+    setWindowTitle("INCA View");
 }
 
 void MainWindow::on_pushLoad_clicked()
@@ -54,6 +69,9 @@ void MainWindow::on_pushLoad_clicked()
                     delete treeParameters_;
                     delete treeResults_;
                     delete parameterModel_;
+
+                    ui->widgetPlot->clearGraphs();
+                    ui->widgetPlot->replot();
                 }
 
                 stuffHasBeenEditedSinceLastSave = false;
@@ -63,31 +81,37 @@ void MainWindow::on_pushLoad_clicked()
 
                 loadedDBPath_ = pathToDB;
 
-                setWindowTitle("INCA view: " + loadedDBPath_);
-
                 copyAndOverwriteFile(loadedDBPath_, tempWorkingDBPath);
 
                 setDBPath(tempWorkingDBPath);
+
+                resetWindowTitle();
 
                 parameterModel_ = new ParameterModel();
                 populateParameterModel();
                 ui->tableViewParameters->setModel(parameterModel_);
                 ui->tableViewParameters->verticalHeader()->hide();
-                QObject::connect(parameterModel_, &ParameterModel::parameterWasEdited, this, &MainWindow::parameterWasEdited);
-
                 ui->tableViewParameters->setItemDelegateForColumn(1, lineEditDelegate);
                 ui->tableViewParameters->setEditTriggers(QAbstractItemView::CurrentChanged);
+                ui->tableViewParameters->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+                QObject::connect(parameterModel_, &ParameterModel::parameterWasEdited, this, &MainWindow::parameterWasEdited);
 
-                treeParameters_ = new TreeModel();
-                treeResults_ = new TreeModel(true);
+                treeParameters_ = new TreeModel("ParameterStructure", "Parameter Structure", true);
+                treeResults_ = new TreeModel("ResultsStructure", "Results Structure", false);
 
-                ui->treeView->setModel(treeParameters_);
-                ui->treeView->expandToDepth(3);
-                //ui->treeView->setColumnHidden(1,TRUE);
-                ui->treeView->resizeColumnToContents(0);
+                ui->treeViewParameters->setModel(treeParameters_);
+                ui->treeViewParameters->expandToDepth(3);
+                ui->treeViewParameters->setColumnHidden(1, true);
+                ui->treeViewParameters->resizeColumnToContents(0);
                 ui->treeViewResults->setModel(treeResults_);
                 ui->treeViewResults->expandToDepth(1);
                 ui->treeViewResults->resizeColumnToContents(0);
+                ui->treeViewResults->setColumnHidden(1, true);
+
+                QObject::connect(ui->treeViewParameters->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::parameterTreeSelectionChanged);
+                QObject::connect(ui->treeViewResults->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::resultsTreeSelectionChanged);
+
+                ui->widgetPlot->addGraph();
             }
         }
         else
@@ -120,7 +144,7 @@ void MainWindow::on_pushSaveAs_clicked()
                 if(tryToSave(tempWorkingDBPath, pathToSave))
                 {
                     loadedDBPath_ = pathToSave;
-                    setWindowTitle("INCA view: " + loadedDBPath_);
+                    resetWindowTitle();
                 }
             }
         }
@@ -162,7 +186,7 @@ bool MainWindow::tryToSave(const QString& oldpath, const QString& newpath)
     }
     else
     {
-        QMessageBox::warning(this, "Save failed", "The operating system failed to save the file", QMessageBox::Ok);
+        QMessageBox::warning(this, "Save failed", "The operating system failed to save the file. Check if the file is in use by another program.", QMessageBox::Ok);
     }
     return saveWorked;
 }
@@ -177,7 +201,20 @@ bool MainWindow::copyAndOverwriteFile(const QString& oldpath, const QString& new
     if(success)
     {
         success = QFile::copy(oldpath, newpath);
+        if(!success)
+        {
+            qDebug("failed to copy");
+            qDebug(oldpath.toLatin1().data());
+            qDebug(newpath.toLatin1().data());
+        }
     }
+    else
+    {
+        qDebug("failed to delete");
+        qDebug(oldpath.toLatin1().data());
+        qDebug(newpath.toLatin1().data());
+    }
+
     return success;
 }
 
@@ -233,95 +270,99 @@ void MainWindow::runINCA()
     //toggleStuffHasBeenEditedSinceLastSave(true);
 }
 
-void MainWindow::on_treeView_clicked(const QModelIndex &index)
+void MainWindow::parameterTreeSelectionChanged(const QItemSelection& selected, const QItemSelection& deselected)
 {
     parameterModel_->clearVisibleParameters();
 
-    connectDB();
-    auto idx = index.model()->index(index.row(),index.column() + 1, index.parent());
-    int ID = (treeParameters_->itemData(idx))[0].toInt();
-
-    QSqlQuery query;
-    query.prepare("select child.name, child.ID from ParameterStructure as parent, ParameterStructure as child "
-                "where child.lft > parent.lft "
-                "and child.rgt < parent.rgt "
-                "and child.dpt = (parent.dpt + 1) "
-                "and parent.id = :ID "
-                "and child.type is not null;"
-                );
-    query.bindValue(":ID",ID);
-    query.exec();
-
-    while (query.next())
+    QModelIndexList indexes = selected.indexes();
+    if(indexes.count() >= 1)
     {
-        int ID = query.value(1).toInt();
-        parameterModel_->setParameterVisible(ID);
+        QModelIndex index = indexes[0];
+        connectDB();
+        auto idx = index.model()->index(index.row(),index.column() + 1, index.parent());
+        int ID = (treeParameters_->itemData(idx))[0].toInt();
+
+        QSqlQuery query;
+        query.prepare("select child.name, child.ID from ParameterStructure as parent, ParameterStructure as child "
+                    "where child.lft > parent.lft "
+                    "and child.rgt < parent.rgt "
+                    "and child.dpt = (parent.dpt + 1) "
+                    "and parent.id = :ID "
+                    "and child.type is not null;"
+                    );
+        query.bindValue(":ID",ID);
+        query.exec();
+
+        while (query.next())
+        {
+            int ID = query.value(1).toInt();
+            parameterModel_->setParameterVisible(ID);
+        } 
+
+        disconnectDB();
     }
-
-    ui->tableViewParameters->resizeColumnToContents(2);
-    ui->tableViewParameters->resizeColumnToContents(3);
-
-    disconnectDB();
-
 }
 
-void MainWindow::on_treeViewResults_clicked(const QModelIndex &index)
+void MainWindow::resultsTreeSelectionChanged(const QItemSelection& selected, const QItemSelection& deselected)
 {
-    connectDB();
-    auto idx = index.model()->index(index.row(),index.column() + 1, index.parent());
-    int ID = (treeParameters_->itemData(idx))[0].toInt();
 
-    QSqlQuery query;
-    query.prepare("SELECT value FROM Results "
-                  "WHERE ID=:ID;"
-                );
-    query.bindValue(":ID",ID);
-    query.exec();
-
-
-    //TODO: Currently times are just for debugging!!! Should read actual times from database.
-    double starttime = QDateTime::currentDateTime().toTime_t();
-    QVector<QCPGraphData> timeData(0);
-
-    //QVector<double> x,y;
-    int cnt = 0;
-    double min = std::numeric_limits<double>::max();
-    double max = std::numeric_limits<double>::min();
-    while (query.next())
+    QModelIndexList indexes = selected.indexes();
+    if(indexes.count() >= 1)
     {
-        double value = query.value(0).toDouble();
+        QModelIndex index = indexes[0];
+        connectDB();
+        auto idx = index.model()->index(index.row(),index.column() + 1, index.parent());
+        int ID = (treeParameters_->itemData(idx))[0].toInt();
 
-        QCPGraphData entry(starttime + 24*3600*(cnt++), value);
+        QSqlQuery query;
+        query.prepare("SELECT value FROM Results "
+                      "WHERE ID=:ID;"
+                    );
+        query.bindValue(":ID",ID);
+        query.exec();
 
-        timeData.append(entry);
 
-        //x.append(cnt++);
-        //y.append(value);
-        min = value < min ? value : min;
-        max = value > max ? value : max;
+        //TODO: Currently times are just for debugging!!! Should read actual times from database.
+        double starttime = QDateTime::currentDateTime().toTime_t();
+        QVector<QCPGraphData> timeData(0);
+
+        //QVector<double> x,y;
+        int cnt = 0;
+        double min = std::numeric_limits<double>::max();
+        double max = std::numeric_limits<double>::min();
+        while (query.next())
+        {
+            double value = query.value(0).toDouble();
+
+            QCPGraphData entry(starttime + 24*3600*(cnt++), value);
+
+            timeData.append(entry);
+
+            //x.append(cnt++);
+            //y.append(value);
+            min = value < min ? value : min;
+            max = value > max ? value : max;
+        }
+        disconnectDB();
+
+        if(max - min < QCPRange::minRange)
+        {
+            max = min + 2.0*QCPRange::minRange;
+        }
+
+        //ui->widgetPlot->graph(0)->setData(timeData);
+        ui->widgetPlot->graph(0)->data()->set(timeData);
+        //ui->widgetPlot->xAxis->setRange(0,cnt);
+
+        QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
+        dateTicker->setDateTimeFormat("d. MMMM\nyyyy");
+        ui->widgetPlot->xAxis->setTicker(dateTicker);
+
+        ui->widgetPlot->yAxis->setRange(min,max);
+        ui->widgetPlot->xAxis->setRange(starttime, starttime+24*3600*(cnt-1));
+
+        ui->widgetPlot->replot();
     }
-    disconnectDB();
-
-    if(max - min < QCPRange::minRange)
-    {
-        max = min + 2.0*QCPRange::minRange;
-    }
-    //qDebug() << "Min: " << min << "Max: " << max;
-
-    // create graph and assign data to it:
-    ui->widgetPlot->addGraph();
-    //ui->widgetPlot->graph(0)->setData(timeData);
-    ui->widgetPlot->graph(0)->data()->set(timeData);
-    //ui->widgetPlot->xAxis->setRange(0,cnt);
-
-    QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
-    dateTicker->setDateTimeFormat("d. MMMM\nyyyy");
-    ui->widgetPlot->xAxis->setTicker(dateTicker);
-
-    ui->widgetPlot->yAxis->setRange(min,max);
-    ui->widgetPlot->xAxis->setRange(starttime, starttime+24*3600*(cnt-1));
-
-    ui->widgetPlot->replot();
 }
 
 void MainWindow::populateParameterModel()
@@ -383,4 +424,5 @@ void MainWindow::toggleStuffHasBeenEditedSinceLastSave(bool newval)
         stuffHasBeenEditedSinceLastSave = true;
         ui->pushSave->setEnabled(true);
     }
+    resetWindowTitle();
 }

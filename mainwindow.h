@@ -36,8 +36,8 @@ private slots:
     void on_pushRun_clicked();
     void closeEvent (QCloseEvent *);
 
-    void on_treeView_clicked(const QModelIndex &index);
-    void on_treeViewResults_clicked(const QModelIndex &index);
+    void parameterTreeSelectionChanged(const QItemSelection &, const QItemSelection &);
+    void resultsTreeSelectionChanged(const QItemSelection &, const QItemSelection &);
 
 
 private:
@@ -52,6 +52,8 @@ private:
     static bool copyAndOverwriteFile(const QString&, const QString&);
     bool saveCheckParameters();
     bool tryToSave(const QString&, const QString&);
+
+    void resetWindowTitle();
 
     Ui::MainWindow *ui;
 
