@@ -60,38 +60,13 @@
 #include <QStringList>
 #include <QDebug>
 
-TreeModel::TreeModel(const QString & tableName, const QString& colName, bool indexersAndIndexesOnly, QObject *parent)
+TreeModel::TreeModel(const QString& colName, QObject *parent)
     : QAbstractItemModel(parent)
 {
     QList<QVariant> rootData;
     rootData << colName << "Database ID";
     rootItem = new TreeItem(rootData);
-    IDtoTreeItem_[-518342] = rootItem;  // -518342 is just a random number that we assume nobody will use as an actual ID value.
-
-    QString onlyIndexersAndIndexes = indexersAndIndexesOnly ? "AND (child.isIndexer is not null OR child.isIndex is not null) " : " ";
-
-    connectDB();
-    QSqlQueryModel query;
-    query.setQuery("SELECT parent.ID as parentID, child.ID, child.Name "
-                          "FROM " + tableName + " as parent, " + tableName + " as child "
-                          "WHERE child.lft > parent.lft "
-                          "AND child.rgt < parent.rgt "
-                          "AND child.dpt = parent.dpt + 1 " + onlyIndexersAndIndexes +
-                          "UNION "
-                          "SELECT -518342 as parentID, child.ID, child.Name "
-                          "FROM " + tableName + " as child "
-                          "WHERE child.dpt = 0;"
-                          );
-
-    for (int i = 0; i < query.rowCount(); ++i)
-    {
-        int parentID = query.data(query.index(i, 0)).toInt();
-        int childID = query.data(query.index(i, 1)).toInt();
-        QString childName = query.data(query.index(i, 2)).toString();
-
-        addItem(childName, childID, parentID);
-    }
-    disconnectDB();
+    IDtoTreeItem_[0] = rootItem;
 }
 
 void TreeModel::addItem(const QString &name, int ID, int parentID)
@@ -103,6 +78,33 @@ void TreeModel::addItem(const QString &name, int ID, int parentID)
     IDtoTreeItem_[ID] = item;
     parent->appendChild(item);
 }
+
+
+
+QString TreeModel::getName(int ID)
+{
+    auto treeItem = IDtoTreeItem_.find(ID);
+    if(treeItem != IDtoTreeItem_.end())
+    {
+        return treeItem->second->data(0).toString();
+    }
+    return "";
+}
+
+
+
+QString TreeModel::getParentName(int ID)
+{
+    auto treeItem = IDtoTreeItem_.find(ID);
+    if(treeItem != IDtoTreeItem_.end())
+    {
+        TreeItem* parent = treeItem->second->parentItem();
+        if(parent) return parent->data(0).toString();
+    }
+    return "";
+}
+
+
 
 TreeModel::~TreeModel()
 {
@@ -204,55 +206,3 @@ int TreeModel::rowCount(const QModelIndex &parent) const
 
     return parentItem->childCount();
 }
-
-/*
-void TreeModel::setupModelData(const QStringList &lines, TreeItem *parent)
-{
-    QList<TreeItem*> parents;
-    QList<int> indentations;
-    parents << parent;
-    indentations << 0;
-
-    int number = 0;
-
-    while (number < lines.count()) {
-        int position = 0;
-        while (position < lines[number].length()) {
-            if (lines[number].at(position) != ' ')
-                break;
-            position++;
-        }
-
-        QString lineData = lines[number].mid(position).trimmed();
-
-        if (!lineData.isEmpty()) {
-            // Read the column data from the rest of the line.
-            QStringList columnStrings = lineData.split("\t", QString::SkipEmptyParts);
-            QList<QVariant> columnData;
-            for (int column = 0; column < columnStrings.count(); ++column)
-                columnData << columnStrings[column];
-
-            if (position > indentations.last()) {
-                // The last child of the current parent is now the new parent
-                // unless the current parent has no children.
-
-                if (parents.last()->childCount() > 0) {
-                    parents << parents.last()->child(parents.last()->childCount()-1);
-                    indentations << position;
-                }
-            } else {
-                while (position < indentations.last() && parents.count() > 0) {
-                    parents.pop_back();
-                    indentations.pop_back();
-                }
-            }
-
-            // Append a new item to the current parent's list of children.
-//            qDebug() << columnData << " " << parents.last()->parentItem();
-            parents.last()->appendChild(new TreeItem(columnData, parents.last()));
-        }
-
-        ++number;
-    }
-}
-*/

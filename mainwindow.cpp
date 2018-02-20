@@ -15,6 +15,20 @@ MainWindow::MainWindow(QWidget *parent) :
     resetWindowTitle();
 
     lineEditDelegate = new LineEditDelegate();
+
+    QAction *ctrlc = new QAction("copy");
+    ctrlc->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_C));
+    QObject::connect(ctrlc, &QAction::triggered, this, &MainWindow::parameterViewCopyRequest);
+    ui->tableViewParameters->addAction(ctrlc);
+
+    graphColors_ = {{0, 130, 200}, {230, 25, 75}, {60, 180, 75}, {245, 130, 48}, {145, 30, 180},
+                    {70, 240, 240}, {240, 50, 230}, {210, 245, 60}, {250, 190, 190}, {0, 128, 128}, {230, 190, 255},
+                    {170, 110, 40}, {128, 0, 0}, {170, 255, 195}, {128, 128, 0}, {255, 215, 180}, {0, 0, 128}, {255, 225, 25}};
+
+    ui->widgetPlotResults->setInteraction(QCP::iRangeDrag, true);
+    ui->widgetPlotResults->setInteraction(QCP::iRangeZoom, true);
+    ui->widgetPlotResults->axisRect(0)->setRangeDrag(Qt::Horizontal);
+    ui->widgetPlotResults->axisRect(0)->setRangeZoom(Qt::Horizontal);
 }
 
 MainWindow::~MainWindow()
@@ -70,8 +84,8 @@ void MainWindow::on_pushLoad_clicked()
                     delete treeResults_;
                     delete parameterModel_;
 
-                    ui->widgetPlot->clearGraphs();
-                    ui->widgetPlot->replot();
+                    ui->widgetPlotResults->clearGraphs();
+                    ui->widgetPlotResults->replot();
                 }
 
                 stuffHasBeenEditedSinceLastSave = false;
@@ -88,7 +102,7 @@ void MainWindow::on_pushLoad_clicked()
                 resetWindowTitle();
 
                 parameterModel_ = new ParameterModel();
-                populateParameterModel();
+                populateParameterModel(parameterModel_);
                 ui->tableViewParameters->setModel(parameterModel_);
                 ui->tableViewParameters->verticalHeader()->hide();
                 ui->tableViewParameters->setItemDelegateForColumn(1, lineEditDelegate);
@@ -96,8 +110,10 @@ void MainWindow::on_pushLoad_clicked()
                 ui->tableViewParameters->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
                 QObject::connect(parameterModel_, &ParameterModel::parameterWasEdited, this, &MainWindow::parameterWasEdited);
 
-                treeParameters_ = new TreeModel("ParameterStructure", "Parameter Structure", true);
-                treeResults_ = new TreeModel("ResultsStructure", "Results Structure", false);
+                treeParameters_ = new TreeModel("Parameter Structure");
+                treeResults_ = new TreeModel("Results Structure");
+                populateTreeModel(treeParameters_, "ParameterStructure", true);
+                populateTreeModel(treeResults_, "ResultsStructure", false);
 
                 ui->treeViewParameters->setModel(treeParameters_);
                 ui->treeViewParameters->expandToDepth(3);
@@ -107,11 +123,10 @@ void MainWindow::on_pushLoad_clicked()
                 ui->treeViewResults->expandToDepth(1);
                 ui->treeViewResults->resizeColumnToContents(0);
                 ui->treeViewResults->setColumnHidden(1, true);
+                ui->treeViewResults->setSelectionMode(QTreeView::ExtendedSelection);
 
                 QObject::connect(ui->treeViewParameters->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::parameterTreeSelectionChanged);
                 QObject::connect(ui->treeViewResults->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::resultsTreeSelectionChanged);
-
-                ui->widgetPlot->addGraph();
             }
         }
         else
@@ -305,67 +320,97 @@ void MainWindow::parameterTreeSelectionChanged(const QItemSelection& selected, c
 
 void MainWindow::resultsTreeSelectionChanged(const QItemSelection& selected, const QItemSelection& deselected)
 {
+    //NOTE: It is somewhat wasteful to clear and replot all the graphs each time the selection changes. We could store a
+    // map<int, QCPGraph> (ID to graph) and only clear out deselected ones and replot new ones.
+    ui->widgetPlotResults->clearGraphs();
+    ui->widgetPlotResults->yAxis->setRange(0, 2.0*QCPRange::minRange); //Find a better way to clear it?
+    ui->textResultsInfo->clear();
 
-    QModelIndexList indexes = selected.indexes();
-    if(indexes.count() >= 1)
+    QModelIndexList indexes = ui->treeViewResults->selectionModel()->selectedIndexes();
+    int firstunassignedcolor = 0;
+
+    for(auto index : indexes)
     {
-        QModelIndex index = indexes[0];
-        connectDB();
         auto idx = index.model()->index(index.row(),index.column() + 1, index.parent());
         int ID = (treeParameters_->itemData(idx))[0].toInt();
-
-        QSqlQuery query;
-        query.prepare("SELECT value FROM Results "
-                      "WHERE ID=:ID;"
-                    );
-        query.bindValue(":ID",ID);
-        query.exec();
-
-
-        //TODO: Currently times are just for debugging!!! Should read actual times from database.
-        double starttime = QDateTime::currentDateTime().toTime_t();
-        QVector<QCPGraphData> timeData(0);
-
-        //QVector<double> x,y;
-        int cnt = 0;
-        double min = std::numeric_limits<double>::max();
-        double max = std::numeric_limits<double>::min();
-        while (query.next())
+        if(index.column() == 0 && ID != 0)
         {
-            double value = query.value(0).toDouble();
+            //QString debug = "row: " + QString::number(index.row()) + " column: " + QString::number(index.column()) + " ID: " + QString::number(ID);
+            //qDebug(debug.toLatin1().data());
 
-            QCPGraphData entry(starttime + 24*3600*(cnt++), value);
+            connectDB();
+            QSqlQuery query;
+            query.prepare("SELECT value FROM Results "
+                          "WHERE ID=:ID;"
+                        );
+            query.bindValue(":ID",ID);
+            query.exec();
 
-            timeData.append(entry);
 
-            //x.append(cnt++);
-            //y.append(value);
-            min = value < min ? value : min;
-            max = value > max ? value : max;
+            //TODO: Currently times are just for debugging!!! Should read actual times from database.
+            double starttime = QDateTime::currentDateTime().toTime_t();
+
+            QVector<double> xval, yval;
+            int cnt = 0;
+            double min = std::numeric_limits<double>::max();
+            double max = std::numeric_limits<double>::min();
+            while (query.next())
+            {
+                double value = query.value(0).toDouble();
+                xval.append(starttime + 24*3600*(cnt++));
+                yval.append(value);
+                min = value < min ? value : min;
+                max = value > max ? value : max;
+            }
+            disconnectDB();
+
+            if(cnt != 0) // TODO: We should maybe add in a better check to avoid indexes and indexers.
+            {
+                QString name = treeResults_->getName(ID);
+                QString parentName = treeResults_->getParentName(ID);
+                QColor color = graphColors_[firstunassignedcolor++];
+                if(firstunassignedcolor == graphColors_.count()) firstunassignedcolor = 0; // Cycle the colors
+
+                double mean = 0;
+                for(double d : yval) mean += d;
+                mean /= (double)cnt;
+                double stddev = 0;
+                for(double d : yval) stddev += (d - mean)*(d - mean);
+                stddev = std::sqrt(stddev / (double) cnt);
+
+                ui->textResultsInfo->append(name + " (" + parentName + ") <font color=" + color.name() + ">&#9608;&#9608;</font>"); //NOTE: this is somewhat reliant on the font on the local system having the character &#9608; (FULL BLOCK)
+                ui->textResultsInfo->append("min: " + QString::number(min, 'g', 5));
+                ui->textResultsInfo->append("max: " + QString::number(max, 'g', 5));
+                ui->textResultsInfo->append("average: " + QString::number(mean, 'g', 5));
+                ui->textResultsInfo->append("standard deviation: " + QString::number(stddev, 'g', 5));
+                ui->textResultsInfo->append(""); //To get a newline
+
+                QCPRange existingYRange = ui->widgetPlotResults->yAxis->range();
+                double newmax = existingYRange.upper < max ? max : existingYRange.upper;
+                double newmin = existingYRange.lower > min ? min : existingYRange.lower;
+                if(newmax - newmin < QCPRange::minRange)
+                {
+                    newmax = newmin + 2.0*QCPRange::minRange;
+                }
+
+                QCPGraph* graph = ui->widgetPlotResults->addGraph();
+                graph->setPen(QPen(color));
+
+                graph->setData(xval, yval);
+
+                QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
+                dateTicker->setDateTimeFormat("d. MMMM\nyyyy");
+                ui->widgetPlotResults->xAxis->setTicker(dateTicker);
+
+                ui->widgetPlotResults->yAxis->setRange(newmin, newmax);
+                ui->widgetPlotResults->xAxis->setRange(starttime, starttime+24*3600*(cnt-1));
+            }
         }
-        disconnectDB();
-
-        if(max - min < QCPRange::minRange)
-        {
-            max = min + 2.0*QCPRange::minRange;
-        }
-
-        //ui->widgetPlot->graph(0)->setData(timeData);
-        ui->widgetPlot->graph(0)->data()->set(timeData);
-        //ui->widgetPlot->xAxis->setRange(0,cnt);
-
-        QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
-        dateTicker->setDateTimeFormat("d. MMMM\nyyyy");
-        ui->widgetPlot->xAxis->setTicker(dateTicker);
-
-        ui->widgetPlot->yAxis->setRange(min,max);
-        ui->widgetPlot->xAxis->setRange(starttime, starttime+24*3600*(cnt-1));
-
-        ui->widgetPlot->replot();
     }
+    ui->widgetPlotResults->replot();
 }
 
-void MainWindow::populateParameterModel()
+void MainWindow::populateParameterModel(ParameterModel *model)
 {
     connectDB();
     QSqlQuery query;
@@ -378,7 +423,7 @@ void MainWindow::populateParameterModel()
     query.exec();
     while (query.next())
     {
-        parameterModel_->addParameter(
+        model->addParameter(
                     query.value(2).toInt(), // ID
                     query.value(0).toString(), // name
                     query.value(1).toString(), // type
@@ -386,6 +431,33 @@ void MainWindow::populateParameterModel()
                     query.value(3).toString(), // min
                     query.value(4).toString() // max
                     );
+    }
+    disconnectDB();
+}
+
+void MainWindow::populateTreeModel(TreeModel* model, const QString& tableName, bool indexersAndIndexesOnly)
+{
+    QString onlyIndexersAndIndexes = indexersAndIndexesOnly ? "AND (child.isIndexer is not null OR child.isIndex is not null) " : " ";
+
+    connectDB();
+    QSqlQueryModel query;
+    query.setQuery("SELECT parent.ID as parentID, child.ID, child.Name "
+                          "FROM " + tableName + " as parent, " + tableName + " as child "
+                          "WHERE child.lft > parent.lft "
+                          "AND child.rgt < parent.rgt "
+                          "AND child.dpt = parent.dpt + 1 " + onlyIndexersAndIndexes +
+                          "UNION "
+                          "SELECT 0 as parentID, child.ID, child.Name " //NOTE: This 0 has to be the same ID as assigned to the tree root node in the TreeModel constructor. This will not work if any of the items in the database have ID=0
+                          "FROM " + tableName + " as child "
+                          "WHERE child.dpt = 0;"
+                          );
+
+    for (int i = 0; i < query.rowCount(); ++i)
+    {
+        int parentID = query.data(query.index(i, 0)).toInt();
+        int childID = query.data(query.index(i, 1)).toInt();
+        QString childName = query.data(query.index(i, 2)).toString();
+        model->addItem(childName, childID, parentID);
     }
     disconnectDB();
 }
@@ -401,7 +473,6 @@ void MainWindow::parameterWasEdited(const QString& newValue, int dbID)
                    " value = '" + newValue + "'"
                     " WHERE "
                     " ID = :id ;");
-    //query.bindValue(":newvalue", newValue);
     query.bindValue(":id", dbID);
     query.exec();
 
@@ -425,4 +496,31 @@ void MainWindow::toggleStuffHasBeenEditedSinceLastSave(bool newval)
         ui->pushSave->setEnabled(true);
     }
     resetWindowTitle();
+}
+
+void MainWindow::parameterViewCopyRequest(bool checked)
+{
+    if(parameterModel_)
+    {
+        QModelIndexList selected = ui->tableViewParameters->selectionModel()->selectedIndexes();
+        if(selected.count() > 0)
+        {
+            QString selectedText;
+            QModelIndex previous = selected.first();
+            selected.removeFirst();
+            for (auto next: selected)
+            {
+                QVariant data = parameterModel_->data(previous);
+                QString text = data.toString();
+                selectedText.append(text);
+                if(next.row() != previous.row()) selectedText.append('\n');
+                else selectedText.append('\t');
+                previous = next;
+            }
+            QVariant data = parameterModel_->data(previous);
+            QString text = data.toString();
+            selectedText.append(text);
+            QApplication::clipboard()->setText(selectedText);
+        }
+    }
 }

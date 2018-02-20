@@ -38,11 +38,12 @@ private slots:
 
     void parameterTreeSelectionChanged(const QItemSelection &, const QItemSelection &);
     void resultsTreeSelectionChanged(const QItemSelection &, const QItemSelection &);
-
+    void parameterViewCopyRequest(bool);
 
 private:
 
-    void populateParameterModel();
+    void populateParameterModel(ParameterModel*);
+    void populateTreeModel(TreeModel*, const QString&, bool);
     void parameterWasEdited(const QString&, int);
 
     void toggleStuffHasBeenEditedSinceLastSave(bool);
@@ -66,6 +67,8 @@ private:
     QString loadedDBPath_;
 
     bool stuffHasBeenEditedSinceLastSave = false;
+
+    QList<QColor> graphColors_;
 };
 
 

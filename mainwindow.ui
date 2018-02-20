@@ -18,7 +18,7 @@
     <item row="0" column="0">
      <layout class="QVBoxLayout" name="verticalLayout">
       <item>
-       <widget class="QSplitter" name="splitter_2">
+       <widget class="QSplitter" name="splitter_3">
         <property name="orientation">
          <enum>Qt::Vertical</enum>
         </property>
@@ -51,22 +51,28 @@
           </property>
          </widget>
         </widget>
-        <widget class="QCustomPlot" name="widgetPlot" native="true">
-         <property name="enabled">
-          <bool>true</bool>
+        <widget class="QSplitter" name="splitter_2">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
          </property>
-         <property name="sizePolicy">
-          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-           <horstretch>0</horstretch>
-           <verstretch>0</verstretch>
-          </sizepolicy>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>0</width>
-           <height>400</height>
-          </size>
-         </property>
+         <widget class="QCustomPlot" name="widgetPlotResults" native="true">
+          <property name="enabled">
+           <bool>true</bool>
+          </property>
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>70</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>100</height>
+           </size>
+          </property>
+         </widget>
+         <widget class="QTextBrowser" name="textResultsInfo"/>
         </widget>
        </widget>
       </item>
