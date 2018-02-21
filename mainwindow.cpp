@@ -12,14 +12,23 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->pushSaveAs->setEnabled(false);
     ui->pushRun->setEnabled(false);
 
+    ui->radioButtonDaily->click();
+    ui->radioButtonDaily->setEnabled(false);
+    ui->radioButtonMonthlyAverages->setEnabled(false);
+    ui->radioButtonYearlyAverages->setEnabled(false);
+
+    QObject::connect(ui->radioButtonDaily, &QRadioButton::clicked, this, &MainWindow::repaintGraphs);
+    QObject::connect(ui->radioButtonMonthlyAverages, &QRadioButton::clicked, this, &MainWindow::repaintGraphs);
+    QObject::connect(ui->radioButtonYearlyAverages, &QRadioButton::clicked, this, &MainWindow::repaintGraphs);
+
     resetWindowTitle();
 
     lineEditDelegate = new LineEditDelegate();
 
     QAction *ctrlc = new QAction("copy");
     ctrlc->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_C));
-    QObject::connect(ctrlc, &QAction::triggered, this, &MainWindow::parameterViewCopyRequest);
-    ui->tableViewParameters->addAction(ctrlc);
+    QObject::connect(ctrlc, &QAction::triggered, this, &MainWindow::copyRequest);
+    ui->centralWidget->addAction(ctrlc);
 
     graphColors_ = {{0, 130, 200}, {230, 25, 75}, {60, 180, 75}, {245, 130, 48}, {145, 30, 180},
                     {70, 240, 240}, {240, 50, 230}, {210, 245, 60}, {250, 190, 190}, {0, 128, 128}, {230, 190, 255},
@@ -93,6 +102,11 @@ void MainWindow::on_pushLoad_clicked()
                 ui->pushSaveAs->setEnabled(true);
                 ui->pushRun->setEnabled(true);
 
+                ui->radioButtonDaily->setEnabled(true);
+                ui->radioButtonMonthlyAverages->setEnabled(true);
+                ui->radioButtonYearlyAverages->setEnabled(true);
+
+
                 loadedDBPath_ = pathToDB;
 
                 copyAndOverwriteFile(loadedDBPath_, tempWorkingDBPath);
@@ -107,7 +121,7 @@ void MainWindow::on_pushLoad_clicked()
                 ui->tableViewParameters->verticalHeader()->hide();
                 ui->tableViewParameters->setItemDelegateForColumn(1, lineEditDelegate);
                 ui->tableViewParameters->setEditTriggers(QAbstractItemView::CurrentChanged);
-                ui->tableViewParameters->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+                //ui->tableViewParameters->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
                 QObject::connect(parameterModel_, &ParameterModel::parameterWasEdited, this, &MainWindow::parameterWasEdited);
 
                 treeParameters_ = new TreeModel("Parameter Structure");
@@ -126,7 +140,10 @@ void MainWindow::on_pushLoad_clicked()
                 ui->treeViewResults->setSelectionMode(QTreeView::ExtendedSelection);
 
                 QObject::connect(ui->treeViewParameters->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::parameterTreeSelectionChanged);
-                QObject::connect(ui->treeViewResults->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::resultsTreeSelectionChanged);
+                QObject::connect(ui->treeViewResults->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::repaintGraphs);
+
+                //NOTE: this is to mark that the x axis is uninitialized so that it can be initialized later. TODO: is there a better way to do it?
+                ui->widgetPlotResults->xAxis->setRange(0.0, 0.1);
             }
         }
         else
@@ -318,10 +335,8 @@ void MainWindow::parameterTreeSelectionChanged(const QItemSelection& selected, c
     }
 }
 
-void MainWindow::resultsTreeSelectionChanged(const QItemSelection& selected, const QItemSelection& deselected)
+void MainWindow::repaintGraphs()
 {
-    //NOTE: It is somewhat wasteful to clear and replot all the graphs each time the selection changes. We could store a
-    // map<int, QCPGraph> (ID to graph) and only clear out deselected ones and replot new ones.
     ui->widgetPlotResults->clearGraphs();
     ui->widgetPlotResults->yAxis->setRange(0, 2.0*QCPRange::minRange); //Find a better way to clear it?
     ui->textResultsInfo->clear();
@@ -335,9 +350,6 @@ void MainWindow::resultsTreeSelectionChanged(const QItemSelection& selected, con
         int ID = (treeParameters_->itemData(idx))[0].toInt();
         if(index.column() == 0 && ID != 0)
         {
-            //QString debug = "row: " + QString::number(index.row()) + " column: " + QString::number(index.column()) + " ID: " + QString::number(ID);
-            //qDebug(debug.toLatin1().data());
-
             connectDB();
             QSqlQuery query;
             query.prepare("SELECT value FROM Results "
@@ -348,7 +360,7 @@ void MainWindow::resultsTreeSelectionChanged(const QItemSelection& selected, con
 
 
             //TODO: Currently times are just for debugging!!! Should read actual times from database.
-            double starttime = QDateTime::currentDateTime().toTime_t();
+            uint starttime = QDateTime::currentDateTime().toTime_t();
 
             QVector<double> xval, yval;
             int cnt = 0;
@@ -379,11 +391,95 @@ void MainWindow::resultsTreeSelectionChanged(const QItemSelection& selected, con
                 stddev = std::sqrt(stddev / (double) cnt);
 
                 ui->textResultsInfo->append(name + " (" + parentName + ") <font color=" + color.name() + ">&#9608;&#9608;</font>"); //NOTE: this is somewhat reliant on the font on the local system having the character &#9608; (FULL BLOCK)
-                ui->textResultsInfo->append("min: " + QString::number(min, 'g', 5));
+                ui->textResultsInfo->append("min: " + QString::number(min, 'g', 5)); //TODO: should this be moved below to display the min of yearly averages when yearly averages are selected?
                 ui->textResultsInfo->append("max: " + QString::number(max, 'g', 5));
                 ui->textResultsInfo->append("average: " + QString::number(mean, 'g', 5));
                 ui->textResultsInfo->append("standard deviation: " + QString::number(stddev, 'g', 5));
                 ui->textResultsInfo->append(""); //To get a newline
+
+                QCPGraph* graph = ui->widgetPlotResults->addGraph();
+                graph->setPen(QPen(color));
+
+                if(ui->radioButtonYearlyAverages->isChecked())
+                {
+                    QVector<double> displayedx, displayedy;
+                    min = std::numeric_limits<double>::max();
+                    max = std::numeric_limits<double>::min();
+
+                    QDateTime date = QDateTime::fromTime_t(starttime);
+                    int prevyear = date.date().year();
+                    double sum = 0;
+                    int dayscnt = 0;
+                    for(int i = 0; i < cnt; ++i)
+                    {
+                        sum += yval[i];
+                        dayscnt++;
+                        int curyear = date.date().year();
+                        if(curyear != prevyear)
+                        {
+                            double value = sum / (double) dayscnt;
+                            displayedy.push_back(value);
+                            displayedx.push_back(QDateTime(QDate(prevyear, 1, 1)).toTime_t());
+                            min = value < min ? value : min;
+                            max = value > max ? value : max;
+
+                            sum = 0;
+                            dayscnt = 0;
+                            prevyear = curyear;
+                        }
+                        date = date.addDays(1);
+                    }
+                    QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
+                    dateTicker->setDateTimeFormat("yyyy");
+                    ui->widgetPlotResults->xAxis->setTicker(dateTicker);
+
+                    graph->setData(displayedx, displayedy);
+                }
+                else if(ui->radioButtonMonthlyAverages->isChecked())
+                {
+                    QVector<double> displayedx, displayedy;
+                    min = std::numeric_limits<double>::max();
+                    max = std::numeric_limits<double>::min();
+
+                    QDateTime date = QDateTime::fromTime_t(starttime);
+                    int prevmonth = date.date().month();
+                    int prevyear = date.date().year();
+                    double sum = 0;
+                    int dayscnt = 0;
+                    for(int i = 0; i < cnt; ++i)
+                    {
+                        sum += yval[i];
+                        dayscnt++;
+                        int curmonth = date.date().month();
+                        if(curmonth != prevmonth)
+                        {
+                            double value = sum / (double) dayscnt;
+                            displayedy.push_back(value);
+                            displayedx.push_back(QDateTime(QDate(prevyear, prevmonth, 1)).toTime_t());
+                            min = value < min ? value : min;
+                            max = value > max ? value : max;
+
+                            sum = 0;
+                            dayscnt = 0;
+                            prevmonth = curmonth;
+                            prevyear = date.date().year();
+                        }
+                        date = date.addDays(1);
+                    }
+                    QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
+                    dateTicker->setDateTimeFormat("MMMM\nyyyy");
+                    ui->widgetPlotResults->xAxis->setTicker(dateTicker);
+
+                    graph->setData(displayedx, displayedy);
+                }
+                else
+                {
+                    QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
+                    dateTicker->setDateTimeFormat("d. MMMM\nyyyy");
+                    ui->widgetPlotResults->xAxis->setTicker(dateTicker);
+
+                    graph->setData(xval, yval);
+                }
 
                 QCPRange existingYRange = ui->widgetPlotResults->yAxis->range();
                 double newmax = existingYRange.upper < max ? max : existingYRange.upper;
@@ -392,18 +488,11 @@ void MainWindow::resultsTreeSelectionChanged(const QItemSelection& selected, con
                 {
                     newmax = newmin + 2.0*QCPRange::minRange;
                 }
-
-                QCPGraph* graph = ui->widgetPlotResults->addGraph();
-                graph->setPen(QPen(color));
-
-                graph->setData(xval, yval);
-
-                QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
-                dateTicker->setDateTimeFormat("d. MMMM\nyyyy");
-                ui->widgetPlotResults->xAxis->setTicker(dateTicker);
-
                 ui->widgetPlotResults->yAxis->setRange(newmin, newmax);
-                ui->widgetPlotResults->xAxis->setRange(starttime, starttime+24*3600*(cnt-1));
+
+                if(ui->widgetPlotResults->xAxis->range().upper - ui->widgetPlotResults->xAxis->range().lower < 1.0) //TODO: is there a better way to check if it is uninitialized?
+                    ui->widgetPlotResults->xAxis->setRange(starttime, starttime+24*3600*(cnt-1));
+
             }
         }
     }
@@ -498,9 +587,9 @@ void MainWindow::toggleStuffHasBeenEditedSinceLastSave(bool newval)
     resetWindowTitle();
 }
 
-void MainWindow::parameterViewCopyRequest(bool checked)
+void MainWindow::copyRequest(bool checked)
 {
-    if(parameterModel_)
+    if(parameterModel_ && ui->tableViewParameters->hasFocus())
     {
         QModelIndexList selected = ui->tableViewParameters->selectionModel()->selectedIndexes();
         if(selected.count() > 0)
@@ -522,5 +611,9 @@ void MainWindow::parameterViewCopyRequest(bool checked)
             selectedText.append(text);
             QApplication::clipboard()->setText(selectedText);
         }
+    }
+    else if(ui->textResultsInfo->hasFocus())
+    {
+        QApplication::clipboard()->setText(ui->textResultsInfo->textCursor().selectedText());
     }
 }

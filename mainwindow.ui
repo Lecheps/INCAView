@@ -16,7 +16,7 @@
   <widget class="QWidget" name="centralWidget">
    <layout class="QGridLayout" name="gridLayout">
     <item row="0" column="0">
-     <layout class="QVBoxLayout" name="verticalLayout">
+     <layout class="QVBoxLayout" name="verticalLayout_2">
       <item>
        <widget class="QSplitter" name="splitter_3">
         <property name="orientation">
@@ -72,7 +72,50 @@
            </size>
           </property>
          </widget>
-         <widget class="QTextBrowser" name="textResultsInfo"/>
+         <widget class="QWidget" name="">
+          <layout class="QVBoxLayout" name="verticalLayout">
+           <property name="sizeConstraint">
+            <enum>QLayout::SetDefaultConstraint</enum>
+           </property>
+           <item>
+            <widget class="QLabel" name="labelPlotMode">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>Select plot mode:</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QRadioButton" name="radioButtonDaily">
+             <property name="text">
+              <string>Daily</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QRadioButton" name="radioButtonMonthlyAverages">
+             <property name="text">
+              <string>Monthly averages</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QRadioButton" name="radioButtonYearlyAverages">
+             <property name="text">
+              <string>Yearly averages</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QTextBrowser" name="textResultsInfo"/>
+           </item>
+          </layout>
+         </widget>
         </widget>
        </widget>
       </item>

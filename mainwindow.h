@@ -37,8 +37,8 @@ private slots:
     void closeEvent (QCloseEvent *);
 
     void parameterTreeSelectionChanged(const QItemSelection &, const QItemSelection &);
-    void resultsTreeSelectionChanged(const QItemSelection &, const QItemSelection &);
-    void parameterViewCopyRequest(bool);
+    void repaintGraphs();
+    void copyRequest(bool);
 
 private:
 
