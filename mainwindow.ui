@@ -120,6 +120,14 @@
        </widget>
       </item>
       <item>
+       <widget class="QLabel" name="labelGraphValues">
+        <property name="text">
+         <string>Date:
+Values:</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <layout class="QHBoxLayout" name="buttonsLayout">
         <item>
          <widget class="QPushButton" name="pushRun">

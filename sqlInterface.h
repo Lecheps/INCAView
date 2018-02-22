@@ -1,9 +1,13 @@
 #ifndef SQLINTERFACE_H
 #define SQLINTERFACE_H
 
-#include"sqlite3.h"
-#include<QtCore>
-#include "parameter.h"
+#include "sqlite3.h"
+#include <QtCore>
+#include <QSqlDatabase>
+#include <QSqlQuery>
+#include <QSqlQueryModel>
+
+//TODO: this class is sort of useless at the moment, and could easily be rolled into MainWindow
 
 class sqlInterface
 {
@@ -15,7 +19,6 @@ public:
     static void disconnectDB();
     static void setDBPath(const QString&);
     static bool pathToDBIsSet() { return dbIsSet_; }
-    //static void copyDBToLocation(const QString&);
 
 private:
     static QSqlDatabase db_;

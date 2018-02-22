@@ -1,4 +1,6 @@
 #include "parametermodel.h"
+#include <QFont>
+#include <QBrush>
 
 ParameterModel::ParameterModel(QObject *parent)
     :QAbstractTableModel(parent)

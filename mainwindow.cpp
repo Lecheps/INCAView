@@ -38,6 +38,8 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->widgetPlotResults->setInteraction(QCP::iRangeZoom, true);
     ui->widgetPlotResults->axisRect(0)->setRangeDrag(Qt::Horizontal);
     ui->widgetPlotResults->axisRect(0)->setRangeZoom(Qt::Horizontal);
+
+    QObject::connect(ui->widgetPlotResults, QCustomPlot::mouseMove, this, &MainWindow::graphToolTip);
 }
 
 MainWindow::~MainWindow()
@@ -251,8 +253,6 @@ bool MainWindow::copyAndOverwriteFile(const QString& oldpath, const QString& new
 }
 
 
-
-
 void MainWindow::on_pushRun_clicked()
 {
     if(pathToDBIsSet()) // Just for safety. The button is disabled in this case.
@@ -299,7 +299,7 @@ void MainWindow::runINCA()
     //TODO: implement
 
     //Because the results part of the db is changed:
-    //toggleStuffHasBeenEditedSinceLastSave(true);
+    toggleStuffHasBeenEditedSinceLastSave(true);
 }
 
 void MainWindow::parameterTreeSelectionChanged(const QItemSelection& selected, const QItemSelection& deselected)
@@ -491,13 +491,54 @@ void MainWindow::repaintGraphs()
                 ui->widgetPlotResults->yAxis->setRange(newmin, newmax);
 
                 if(ui->widgetPlotResults->xAxis->range().upper - ui->widgetPlotResults->xAxis->range().lower < 1.0) //TODO: is there a better way to check if it is uninitialized?
-                    ui->widgetPlotResults->xAxis->setRange(starttime, starttime+24*3600*(cnt-1));
+                    ui->widgetPlotResults->xAxis->setRange(xval.first(), xval.last());
 
             }
         }
     }
     ui->widgetPlotResults->replot();
 }
+
+
+void MainWindow::graphToolTip(QMouseEvent *event)
+{
+    if(ui->widgetPlotResults->graphCount() > 0)
+    {
+        uint x = (uint)ui->widgetPlotResults->xAxis->pixelToCoord(event->pos().x());
+
+        QModelIndexList indexes = ui->treeViewResults->selectionModel()->selectedIndexes();
+        QString valueString= "";
+        bool first = true;
+        for(int i = 0; i < ui->widgetPlotResults->graphCount(); ++i)
+        {
+            if(first) first = false;
+            else valueString.append("\n");
+
+            QCPGraph *graph = ui->widgetPlotResults->graph(i);
+            double value = graph->data()->findBegin((double)x)->value;
+
+            //NOTE: there is a bug where the value is not completely synched to the x. The value may change even if the displayed x does not.
+            //may have to do with how the graph values are stored.
+
+            int ID = indexes[2*i + 1].data().toInt();
+            valueString.append(treeResults_->getName(ID)).append(" (").append(treeResults_->getParentName(ID)).append("): ");
+
+            valueString.append(QString::number(value, 'g', 5));
+        }
+
+        QDateTime date = QDateTime::fromTime_t(x);
+        QString dateString;
+        if(ui->radioButtonYearlyAverages->isChecked())
+            dateString = date.toString("yyyy").append(" yearly average");
+        else if(ui->radioButtonMonthlyAverages->isChecked())
+            dateString = date.toString("MMMM yyyy").append(" monthly average");
+        else
+            dateString = date.toString("d. MMMM yyyy");
+
+        ui->labelGraphValues->setText(QString("%1:\n%2").arg(dateString).arg(valueString));
+    }
+}
+
 
 void MainWindow::populateParameterModel(ParameterModel *model)
 {

@@ -39,6 +39,7 @@ private slots:
     void parameterTreeSelectionChanged(const QItemSelection &, const QItemSelection &);
     void repaintGraphs();
     void copyRequest(bool);
+    void graphToolTip(QMouseEvent *event);
 
 private:
 

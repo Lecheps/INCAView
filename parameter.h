@@ -2,13 +2,6 @@
 #define PARAMETER_H
 
 #include <QString>
-#include <QSqlDatabase>
-#include <QSqlQuery>
-#include <QSqlQueryModel>
-#include <QHBoxLayout>
-#include <QLineEdit>
-#include <QSpacerItem>
-#include <QLabel>
 
 class ParameterValue
 {
