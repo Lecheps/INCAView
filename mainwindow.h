@@ -36,8 +36,8 @@ private slots:
     void on_pushRun_clicked();
     void closeEvent (QCloseEvent *);
 
-    void parameterTreeSelectionChanged(const QItemSelection &, const QItemSelection &);
-    void repaintGraphs();
+    void updateParameterView(const QItemSelection &, const QItemSelection &);
+    void updateGraphsAndResultSummary();
     void copyRequest(bool);
     void graphToolTip(QMouseEvent *event);
 

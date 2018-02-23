@@ -2,10 +2,10 @@
 #include "sqlInterface.h"
 #include <QDateTime>
 
-ParameterValue::ParameterValue(const QString & valueStr, const QString & typeStr)
+ParameterValue::ParameterValue(const QVariant & valueVar, const QString & typeStr)
 {
     type = parseParameterType(typeStr);
-    setValue(valueStr);
+    setValue(valueVar);
 }
 
 ParameterValue::ParameterValue()
@@ -24,7 +24,7 @@ ParameterValue::Type ParameterValue::parseParameterType(const QString& typeStr)
     return UNKNOWN;
 }
 
-bool ParameterValue::isValidValue(const QString & valueStr)
+bool ParameterValue::isValidValue(const QVariant& valueVar)
 {
     bool valid = false;
 
@@ -32,12 +32,12 @@ bool ParameterValue::isValidValue(const QString & valueStr)
     {
     case DOUBLE:
     {
-        valueStr.toDouble(&valid);
+        valueVar.toDouble(&valid);
     } break;
 
     case UINT:
     {
-        valueStr.toUInt(&valid);
+        valueVar.toUInt(&valid);
     } break;
 
     case BOOL:
@@ -60,7 +60,7 @@ bool ParameterValue::isValidValue(const QString & valueStr)
     return valid;
 }
 
-bool ParameterValue::setValue(const QString & valueStr)
+bool ParameterValue::setValue(const QVariant & valueVar)
 {
     bool changed = false;
 
@@ -68,17 +68,17 @@ bool ParameterValue::setValue(const QString & valueStr)
     {
     case DOUBLE:
     {
-        double newVal = valueStr.toDouble();
+        double newVal = valueVar.toDouble();
         if(value.Double != newVal)
         {
-            value.Double = valueStr.toDouble();
+            value.Double = valueVar.toDouble();
             changed = true;
         }
     } break;
 
     case UINT:
     {
-        uint64_t newVal = valueStr.toUInt();
+        uint64_t newVal = valueVar.toUInt();
         if(value.Uint != newVal)
         {
             value.Uint = newVal;
@@ -106,8 +106,9 @@ bool ParameterValue::setValue(const QString & valueStr)
     return changed;
 }
 
-QString ParameterValue::getValueString(int precision)
+QString ParameterValue::getValueDisplayString(int precision)
 {
+    //This is for displaying the value in the parameter view
     switch(type)
     {
     case DOUBLE:
@@ -127,8 +128,42 @@ QString ParameterValue::getValueString(int precision)
 
     case PTIME:
     {
-        QDateTime dt = QDateTime::fromSecsSinceEpoch(value.Time);
-        return dt.toString("d. MMMM\nyyyy");
+        QDateTime date = QDateTime::fromSecsSinceEpoch(value.Time);
+        return QLocale().toString(date, "d. MMMM\nyyyy");
+    } break;
+
+    case UNKNOWN:
+    {
+        return "unknown type";
+    } break;
+
+    }
+    return "";
+}
+
+QString ParameterValue::getValueDBString()
+{
+    // This is for storing the value back in the database. Must match how this type is represented in SQLLite db by INCA.
+    switch(type)
+    {
+    case DOUBLE:
+    {
+        return QString::number(value.Double, 'g');
+    } break;
+
+    case UINT:
+    {
+        return QString::number(value.Uint);
+    } break;
+
+    case BOOL:
+    {
+        return value.Bool ? "1" : "0"; //TODO: check if this is correct!
+    } break;
+
+    case PTIME:
+    {
+        return QString::number(value.Time);
     } break;
 
     case UNKNOWN:

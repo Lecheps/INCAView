@@ -20,7 +20,7 @@ public:
     Qt::ItemFlags flags(const QModelIndex &index) const;
 
     bool areAllParametersInRange() const;
-    void addParameter(int, const QString&, const QString&, const QString&, const QString&, const QString&);
+    void addParameter(int, const QString&, const QString&, const QVariant&, const QVariant&, const QVariant&);
     void clearVisibleParameters();
     void setParameterVisible(int);
 private:

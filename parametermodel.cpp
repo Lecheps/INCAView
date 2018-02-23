@@ -46,15 +46,15 @@ QVariant ParameterModel::data(const QModelIndex &index, int role) const
             } break;
             case 1:
             {
-                return layout->value.getValueString(precision);
+                return layout->value.getValueDisplayString(precision);
             } break;
             case 2:
             {
-                return layout->min.getValueString(precision);
+                return layout->min.getValueDisplayString(precision);
             } break;
             case 3:
             {
-                return layout->max.getValueString(precision);
+                return layout->max.getValueDisplayString(precision);
             } break;
         }
     } break;
@@ -129,7 +129,8 @@ bool ParameterModel::setData(const QModelIndex & index, const QVariant & value, 
 
                 if(valueWasChanged)
                 {
-                    emit parameterWasEdited(strVal, ID);
+                    QString dbVal = param->value.getValueDBString();
+                    emit parameterWasEdited(dbVal, ID);
                     return true;
                 }
             }
@@ -167,11 +168,11 @@ bool ParameterModel::areAllParametersInRange() const
     return result;
 }
 
-void ParameterModel::addParameter(int ID, const QString& name, const QString& typeStr, const QString& valueStr, const QString& minStr, const QString& maxStr)
+void ParameterModel::addParameter(int ID, const QString& name, const QString& typeStr, const QVariant &valueVar, const QVariant &minVar, const QVariant &maxVar)
 {
-    ParameterValue value(valueStr, typeStr);
-    ParameterValue min(minStr, typeStr);
-    ParameterValue max(maxStr, typeStr);
+    ParameterValue value(valueVar, typeStr);
+    ParameterValue min(minVar, typeStr);
+    ParameterValue max(maxVar, typeStr);
     Parameter *param = new Parameter(name, value, min, max);
     IDtoParam_[ID] = param;
 }

@@ -2,6 +2,7 @@
 #define PARAMETER_H
 
 #include <QString>
+#include <QVariant>
 
 class ParameterValue
 {
@@ -16,15 +17,15 @@ public:
         UNKNOWN,
     };
 
-    ParameterValue(const QString &, const QString &);
+    ParameterValue(const QVariant &, const QString &);
     ParameterValue();
 
     static Type parseParameterType(const QString &);
 
-    bool isValidValue(const QString &);
-    bool setValue(const QString &);
-    QString getValueString(int precision = 10);
-    //Type getType() { return type; }
+    bool isValidValue(const QVariant &);
+    bool setValue(const QVariant &valueVar);
+    QString getValueDisplayString(int precision = 10);
+    QString getValueDBString();
     int isNotInRange(const ParameterValue&, const ParameterValue&);
 
 private:

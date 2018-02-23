@@ -17,23 +17,31 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->radioButtonMonthlyAverages->setEnabled(false);
     ui->radioButtonYearlyAverages->setEnabled(false);
 
-    QObject::connect(ui->radioButtonDaily, &QRadioButton::clicked, this, &MainWindow::repaintGraphs);
-    QObject::connect(ui->radioButtonMonthlyAverages, &QRadioButton::clicked, this, &MainWindow::repaintGraphs);
-    QObject::connect(ui->radioButtonYearlyAverages, &QRadioButton::clicked, this, &MainWindow::repaintGraphs);
+    QObject::connect(ui->radioButtonDaily, &QRadioButton::clicked, this, &MainWindow::updateGraphsAndResultSummary);
+    QObject::connect(ui->radioButtonMonthlyAverages, &QRadioButton::clicked, this, &MainWindow::updateGraphsAndResultSummary);
+    QObject::connect(ui->radioButtonYearlyAverages, &QRadioButton::clicked, this, &MainWindow::updateGraphsAndResultSummary);
 
     resetWindowTitle();
 
+    //NOTE: the lineeditdelegate is used by the tableviewparameters to provide an input widget when editing parameter values.
     lineEditDelegate = new LineEditDelegate();
+    ui->tableViewParameters->setItemDelegateForColumn(1, lineEditDelegate);
+    ui->tableViewParameters->verticalHeader()->hide();
+    ui->tableViewParameters->setEditTriggers(QAbstractItemView::AllEditTriggers);
 
+    //NOTE: we override the ctrl-c functionality in order to copy the table view correctly. So anything that should be copyable to the clipboard has to be explicitly handled in MainWindow::copyRequest.
     QAction *ctrlc = new QAction("copy");
     ctrlc->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_C));
     QObject::connect(ctrlc, &QAction::triggered, this, &MainWindow::copyRequest);
     ui->centralWidget->addAction(ctrlc);
 
+    //The graph colors are used to select colors for graphs in the widgetPlotResults widget. Used in MainWindow::updateGraphsAndResultSummary
     graphColors_ = {{0, 130, 200}, {230, 25, 75}, {60, 180, 75}, {245, 130, 48}, {145, 30, 180},
                     {70, 240, 240}, {240, 50, 230}, {210, 245, 60}, {250, 190, 190}, {0, 128, 128}, {230, 190, 255},
                     {170, 110, 40}, {128, 0, 0}, {170, 255, 195}, {128, 128, 0}, {255, 215, 180}, {0, 0, 128}, {255, 225, 25}};
 
+    QLocale::setDefault(QLocale::English);
+    ui->widgetPlotResults->setLocale(QLocale::English);
     ui->widgetPlotResults->setInteraction(QCP::iRangeDrag, true);
     ui->widgetPlotResults->setInteraction(QCP::iRangeZoom, true);
     ui->widgetPlotResults->axisRect(0)->setRangeDrag(Qt::Horizontal);
@@ -120,10 +128,7 @@ void MainWindow::on_pushLoad_clicked()
                 parameterModel_ = new ParameterModel();
                 populateParameterModel(parameterModel_);
                 ui->tableViewParameters->setModel(parameterModel_);
-                ui->tableViewParameters->verticalHeader()->hide();
-                ui->tableViewParameters->setItemDelegateForColumn(1, lineEditDelegate);
-                ui->tableViewParameters->setEditTriggers(QAbstractItemView::CurrentChanged);
-                //ui->tableViewParameters->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+
                 QObject::connect(parameterModel_, &ParameterModel::parameterWasEdited, this, &MainWindow::parameterWasEdited);
 
                 treeParameters_ = new TreeModel("Parameter Structure");
@@ -139,10 +144,10 @@ void MainWindow::on_pushLoad_clicked()
                 ui->treeViewResults->expandToDepth(1);
                 ui->treeViewResults->resizeColumnToContents(0);
                 ui->treeViewResults->setColumnHidden(1, true);
-                ui->treeViewResults->setSelectionMode(QTreeView::ExtendedSelection);
+                ui->treeViewResults->setSelectionMode(QTreeView::ExtendedSelection); // Allows to ctrl-select multiple items.
 
-                QObject::connect(ui->treeViewParameters->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::parameterTreeSelectionChanged);
-                QObject::connect(ui->treeViewResults->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::repaintGraphs);
+                QObject::connect(ui->treeViewParameters->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateParameterView);
+                QObject::connect(ui->treeViewResults->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateGraphsAndResultSummary);
 
                 //NOTE: this is to mark that the x axis is uninitialized so that it can be initialized later. TODO: is there a better way to do it?
                 ui->widgetPlotResults->xAxis->setRange(0.0, 0.1);
@@ -173,7 +178,7 @@ void MainWindow::on_pushSaveAs_clicked()
         {
             QString pathToSave = QFileDialog::getSaveFileName(this, tr("Select location to store a backup copy of the database"), "c:/Users/Magnus/Documents/INCAView/", tr("Database files (*.db)"));
 
-            if(!pathToSave.isEmpty()&& !pathToSave.isNull()) //In case the user cancel, or no to the overwrite question.
+            if(!pathToSave.isEmpty()&& !pathToSave.isNull()) //In case the user clicks cancel, or replies no to an overwrite query.
             {
                 if(tryToSave(tempWorkingDBPath, pathToSave))
                 {
@@ -245,7 +250,6 @@ bool MainWindow::copyAndOverwriteFile(const QString& oldpath, const QString& new
     else
     {
         qDebug("failed to delete");
-        qDebug(oldpath.toLatin1().data());
         qDebug(newpath.toLatin1().data());
     }
 
@@ -263,7 +267,7 @@ void MainWindow::on_pushRun_clicked()
         }
         else
         {
-            QMessageBox msgBox(QMessageBox::Warning, tr("Invalid parameters"), tr("Not all parameters are in the [min, max] range. Run the model anyway?"));
+            QMessageBox msgBox(QMessageBox::Warning, tr("Invalid parameters"), tr("Not all parameters are in the [min, max] range. This may cause INCA to crash. Run the model anyway?"));
             QPushButton *runButton = msgBox.addButton(tr("Run model"), QMessageBox::ActionRole);
             QPushButton *abortButton = msgBox.addButton(QMessageBox::Cancel);
 
@@ -302,20 +306,20 @@ void MainWindow::runINCA()
     toggleStuffHasBeenEditedSinceLastSave(true);
 }
 
-void MainWindow::parameterTreeSelectionChanged(const QItemSelection& selected, const QItemSelection& deselected)
+void MainWindow::updateParameterView(const QItemSelection& selected, const QItemSelection& deselected)
 {
     parameterModel_->clearVisibleParameters();
 
     QModelIndexList indexes = selected.indexes();
     if(indexes.count() >= 1)
     {
-        QModelIndex index = indexes[0];
-        connectDB();
-        auto idx = index.model()->index(index.row(),index.column() + 1, index.parent());
-        int ID = (treeParameters_->itemData(idx))[0].toInt();
+        // The selection mode for this view is so that we can only select one row at the time. The first item in indexes points to the name, the second to the ID.
+        QModelIndex index = indexes[1];
+        int ID = treeParameters_->data(index).toInt();
 
+        connectDB();
         QSqlQuery query;
-        query.prepare("select child.name, child.ID from ParameterStructure as parent, ParameterStructure as child "
+        query.prepare("select child.ID from ParameterStructure as parent, ParameterStructure as child "
                     "where child.lft > parent.lft "
                     "and child.rgt < parent.rgt "
                     "and child.dpt = (parent.dpt + 1) "
@@ -327,7 +331,7 @@ void MainWindow::parameterTreeSelectionChanged(const QItemSelection& selected, c
 
         while (query.next())
         {
-            int ID = query.value(1).toInt();
+            int ID = query.value(0).toInt();
             parameterModel_->setParameterVisible(ID);
         } 
 
@@ -335,7 +339,7 @@ void MainWindow::parameterTreeSelectionChanged(const QItemSelection& selected, c
     }
 }
 
-void MainWindow::repaintGraphs()
+void MainWindow::updateGraphsAndResultSummary()
 {
     ui->widgetPlotResults->clearGraphs();
     ui->widgetPlotResults->yAxis->setRange(0, 2.0*QCPRange::minRange); //Find a better way to clear it?
@@ -360,7 +364,9 @@ void MainWindow::repaintGraphs()
 
 
             //TODO: Currently times are just for debugging!!! Should read actual times from database.
-            uint starttime = QDateTime::currentDateTime().toTime_t();
+            auto startdate = QDateTime::currentDateTime();
+            startdate = QDateTime(startdate.date()); //Remove hours, minutes, seconds
+            uint starttime = startdate.toTime_t();
 
             QVector<double> xval, yval;
             int cnt = 0;
@@ -376,7 +382,7 @@ void MainWindow::repaintGraphs()
             }
             disconnectDB();
 
-            if(cnt != 0) // TODO: We should maybe add in a better check to avoid indexes and indexers.
+            if(cnt != 0)
             {
                 QString name = treeResults_->getName(ID);
                 QString parentName = treeResults_->getParentName(ID);
@@ -502,6 +508,7 @@ void MainWindow::repaintGraphs()
 
 void MainWindow::graphToolTip(QMouseEvent *event)
 {
+    //NOTE: this is for changing the labelGraphValues label to print the values of the visible graphs when the mouse hovers over them. Not really a tooltip. Better name?
     if(ui->widgetPlotResults->graphCount() > 0)
     {
         uint x = (uint)ui->widgetPlotResults->xAxis->pixelToCoord(event->pos().x());
@@ -517,9 +524,6 @@ void MainWindow::graphToolTip(QMouseEvent *event)
             QCPGraph *graph = ui->widgetPlotResults->graph(i);
             double value = graph->data()->findBegin((double)x)->value;
 
-            //NOTE: there is a bug where the value is not completely synched to the x. The value may change even if the displayed x does not.
-            //may have to do with how the graph values are stored.
-
             int ID = indexes[2*i + 1].data().toInt();
             valueString.append(treeResults_->getName(ID)).append(" (").append(treeResults_->getParentName(ID)).append("): ");
 
@@ -529,13 +533,17 @@ void MainWindow::graphToolTip(QMouseEvent *event)
         QDateTime date = QDateTime::fromTime_t(x);
         QString dateString;
         if(ui->radioButtonYearlyAverages->isChecked())
-            dateString = date.toString("yyyy").append(" yearly average");
+            dateString = QLocale().toString(date, "yyyy").append(" yearly average");
         else if(ui->radioButtonMonthlyAverages->isChecked())
-            dateString = date.toString("MMMM yyyy").append(" monthly average");
+            dateString = QLocale().toString(date, "MMMM yyyy").append(" monthly average");
         else
-            dateString = date.toString("d. MMMM yyyy");
+            dateString = QLocale().toString(date, "d. MMMM yyyy");
 
         ui->labelGraphValues->setText(QString("%1:\n%2").arg(dateString).arg(valueString));
+    }
+    else
+    {
+        ui->labelGraphValues->setText("Date:\nValues:");
     }
 }
 
@@ -557,9 +565,9 @@ void MainWindow::populateParameterModel(ParameterModel *model)
                     query.value(2).toInt(), // ID
                     query.value(0).toString(), // name
                     query.value(1).toString(), // type
-                    query.value(5).toString(), // value
-                    query.value(3).toString(), // min
-                    query.value(4).toString() // max
+                    query.value(5), // value
+                    query.value(3), // min
+                    query.value(4) // max
                     );
     }
     disconnectDB();
@@ -630,6 +638,8 @@ void MainWindow::toggleStuffHasBeenEditedSinceLastSave(bool newval)
 
 void MainWindow::copyRequest(bool checked)
 {
+    //NOTE: we override the ctrl-c functionality in order to copy the table view correctly. So anything that should be copyable to the clipboard has to be explicitly handled here.
+
     if(parameterModel_ && ui->tableViewParameters->hasFocus())
     {
         QModelIndexList selected = ui->tableViewParameters->selectionModel()->selectedIndexes();
