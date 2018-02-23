@@ -40,12 +40,12 @@ private slots:
     void updateGraphsAndResultSummary();
     void copyRequest(bool);
     void graphToolTip(QMouseEvent *event);
+    void parameterWasEdited(Parameter*, int);
 
 private:
 
     void populateParameterModel(ParameterModel*);
     void populateTreeModel(TreeModel*, const QString&, bool);
-    void parameterWasEdited(const QString&, int);
 
     void toggleStuffHasBeenEditedSinceLastSave(bool);
 

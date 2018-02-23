@@ -386,7 +386,7 @@ void MainWindow::updateGraphsAndResultSummary()
             {
                 QString name = treeResults_->getName(ID);
                 QString parentName = treeResults_->getParentName(ID);
-                QColor color = graphColors_[firstunassignedcolor++];
+                QColor& color = graphColors_[firstunassignedcolor++];
                 if(firstunassignedcolor == graphColors_.count()) firstunassignedcolor = 0; // Cycle the colors
 
                 double mean = 0;
@@ -396,12 +396,19 @@ void MainWindow::updateGraphsAndResultSummary()
                 for(double d : yval) stddev += (d - mean)*(d - mean);
                 stddev = std::sqrt(stddev / (double) cnt);
 
-                ui->textResultsInfo->append(name + " (" + parentName + ") <font color=" + color.name() + ">&#9608;&#9608;</font>"); //NOTE: this is somewhat reliant on the font on the local system having the character &#9608; (FULL BLOCK)
-                ui->textResultsInfo->append("min: " + QString::number(min, 'g', 5)); //TODO: should this be moved below to display the min of yearly averages when yearly averages are selected?
-                ui->textResultsInfo->append("max: " + QString::number(max, 'g', 5));
-                ui->textResultsInfo->append("average: " + QString::number(mean, 'g', 5));
-                ui->textResultsInfo->append("standard deviation: " + QString::number(stddev, 'g', 5));
-                ui->textResultsInfo->append(""); //To get a newline
+                ui->textResultsInfo->append(QString(
+                        "%1 (%2) <font color=%3>&#9608;&#9608;</font><br/>" //NOTE: this is somewhat reliant on the font on the local system having the character &#9608; (FULL BLOCK)
+                        "min: %4<br/>"
+                        "max: %5<br/>"
+                        "average: %6<br/>"
+                        "standard deviation: %7<br/>"
+                        "<br/>"
+                      ).arg(name, parentName, color.name())
+                       .arg(min, 0, 'g', 5)                          //TODO: should this be moved below to display the min of yearly averages when yearly averages are selected?
+                       .arg(max, 0, 'g', 5)
+                       .arg(mean, 0, 'g', 5)
+                       .arg(stddev, 0, 'g', 5)
+                );
 
                 QCPGraph* graph = ui->widgetPlotResults->addGraph();
                 graph->setPen(QPen(color));
@@ -579,15 +586,15 @@ void MainWindow::populateTreeModel(TreeModel* model, const QString& tableName, b
 
     connectDB();
     QSqlQueryModel query;
-    query.setQuery("SELECT parent.ID as parentID, child.ID, child.Name "
-                          "FROM " + tableName + " as parent, " + tableName + " as child "
+    query.setQuery(QString("SELECT parent.ID as parentID, child.ID, child.Name "
+                          "FROM %1 as parent, %1 as child "
                           "WHERE child.lft > parent.lft "
                           "AND child.rgt < parent.rgt "
-                          "AND child.dpt = parent.dpt + 1 " + onlyIndexersAndIndexes +
+                          "AND child.dpt = parent.dpt + 1 %2"
                           "UNION "
                           "SELECT 0 as parentID, child.ID, child.Name " //NOTE: This 0 has to be the same ID as assigned to the tree root node in the TreeModel constructor. This will not work if any of the items in the database have ID=0
-                          "FROM " + tableName + " as child "
-                          "WHERE child.dpt = 0;"
+                          "FROM %1 as child "
+                          "WHERE child.dpt = 0;").arg(tableName).arg(onlyIndexersAndIndexes)
                           );
 
     for (int i = 0; i < query.rowCount(); ++i)
@@ -600,18 +607,18 @@ void MainWindow::populateTreeModel(TreeModel* model, const QString& tableName, b
     disconnectDB();
 }
 
-void MainWindow::parameterWasEdited(const QString& newValue, int dbID)
+void MainWindow::parameterWasEdited(Parameter *param, int dbID)
 {
     connectDB();
-
     QSqlQuery query;
     query.prepare( "UPDATE "
                    " ParameterValues "
                    " SET "
-                   " value = '" + newValue + "'"
+                   " value = :val"
                     " WHERE "
                     " ID = :id ;");
     query.bindValue(":id", dbID);
+    query.bindValue(":val", param->value.getValueDBString());
     query.exec();
 
     disconnectDB();

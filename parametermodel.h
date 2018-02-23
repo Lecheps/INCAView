@@ -27,7 +27,7 @@ private:
     std::vector<int> visibleParamID_;
     std::map<int, Parameter*> IDtoParam_;
 signals:
-    void parameterWasEdited(const QString&, int);
+    void parameterWasEdited(Parameter*, int);
 };
 
 #endif // PARAMETERVIEWMODEL_H

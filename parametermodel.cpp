@@ -130,7 +130,7 @@ bool ParameterModel::setData(const QModelIndex & index, const QVariant & value, 
                 if(valueWasChanged)
                 {
                     QString dbVal = param->value.getValueDBString();
-                    emit parameterWasEdited(dbVal, ID);
+                    emit parameterWasEdited(param, ID);
                     return true;
                 }
             }
