@@ -38,9 +38,10 @@ private slots:
 
     void updateParameterView(const QItemSelection &, const QItemSelection &);
     void updateGraphsAndResultSummary();
-    void copyRequest(bool);
-    void graphToolTip(QMouseEvent *event);
-    void parameterWasEdited(Parameter*, int);
+    void copyToClipboard(bool);
+    void undo(bool);
+    void updateGraphToolTip(QMouseEvent *event);
+    void parameterWasEdited(ParameterEditAction);
 
 private:
 
@@ -69,7 +70,9 @@ private:
 
     bool stuffHasBeenEditedSinceLastSave = false;
 
-    QList<QColor> graphColors_;
+    QVector<QColor> graphColors_;
+
+    QVector<ParameterEditAction> editUndoStack_;
 };
 
 

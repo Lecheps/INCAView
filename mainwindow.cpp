@@ -32,8 +32,13 @@ MainWindow::MainWindow(QWidget *parent) :
     //NOTE: we override the ctrl-c functionality in order to copy the table view correctly. So anything that should be copyable to the clipboard has to be explicitly handled in MainWindow::copyRequest.
     QAction *ctrlc = new QAction("copy");
     ctrlc->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_C));
-    QObject::connect(ctrlc, &QAction::triggered, this, &MainWindow::copyRequest);
+    QObject::connect(ctrlc, &QAction::triggered, this, &MainWindow::copyToClipboard);
     ui->centralWidget->addAction(ctrlc);
+
+    QAction *ctrlz = new QAction("undo");
+    ctrlz->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_Z));
+    QObject::connect(ctrlz, &QAction::triggered, this, &MainWindow::undo);
+    ui->centralWidget->addAction(ctrlz);
 
     //The graph colors are used to select colors for graphs in the widgetPlotResults widget. Used in MainWindow::updateGraphsAndResultSummary
     graphColors_ = {{0, 130, 200}, {230, 25, 75}, {60, 180, 75}, {245, 130, 48}, {145, 30, 180},
@@ -47,7 +52,7 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->widgetPlotResults->axisRect(0)->setRangeDrag(Qt::Horizontal);
     ui->widgetPlotResults->axisRect(0)->setRangeZoom(Qt::Horizontal);
 
-    QObject::connect(ui->widgetPlotResults, QCustomPlot::mouseMove, this, &MainWindow::graphToolTip);
+    QObject::connect(ui->widgetPlotResults, QCustomPlot::mouseMove, this, &MainWindow::updateGraphToolTip);
 }
 
 MainWindow::~MainWindow()
@@ -108,6 +113,7 @@ void MainWindow::on_pushLoad_clicked()
                 }
 
                 stuffHasBeenEditedSinceLastSave = false;
+                editUndoStack_.clear();
 
                 ui->pushSaveAs->setEnabled(true);
                 ui->pushRun->setEnabled(true);
@@ -166,7 +172,10 @@ void MainWindow::on_pushSave_clicked()
 {
     if(pathToDBIsSet()) // Just for safety. The button is disabled in this case.
     {
-        if(saveCheckParameters()) tryToSave(tempWorkingDBPath, loadedDBPath_);
+        if(saveCheckParameters())
+        {
+            tryToSave(tempWorkingDBPath, loadedDBPath_);
+        }
     }
 }
 
@@ -222,6 +231,7 @@ bool MainWindow::tryToSave(const QString& oldpath, const QString& newpath)
     if(saveWorked)
     {
         toggleStuffHasBeenEditedSinceLastSave(false);
+        editUndoStack_.clear();
     }
     else
     {
@@ -510,13 +520,14 @@ void MainWindow::updateGraphsAndResultSummary()
         }
     }
     ui->widgetPlotResults->replot();
+    updateGraphToolTip(0); // Just to clear it.
 }
 
 
-void MainWindow::graphToolTip(QMouseEvent *event)
+void MainWindow::updateGraphToolTip(QMouseEvent *event)
 {
     //NOTE: this is for changing the labelGraphValues label to print the values of the visible graphs when the mouse hovers over them. Not really a tooltip. Better name?
-    if(ui->widgetPlotResults->graphCount() > 0)
+    if(event && ui->widgetPlotResults->graphCount() > 0)
     {
         uint x = (uint)ui->widgetPlotResults->xAxis->pixelToCoord(event->pos().x());
 
@@ -607,7 +618,7 @@ void MainWindow::populateTreeModel(TreeModel* model, const QString& tableName, b
     disconnectDB();
 }
 
-void MainWindow::parameterWasEdited(Parameter *param, int dbID)
+void MainWindow::parameterWasEdited(ParameterEditAction param)
 {
     connectDB();
     QSqlQuery query;
@@ -617,9 +628,11 @@ void MainWindow::parameterWasEdited(Parameter *param, int dbID)
                    " value = :val"
                     " WHERE "
                     " ID = :id ;");
-    query.bindValue(":id", dbID);
-    query.bindValue(":val", param->value.getValueDBString());
+    query.bindValue(":id", param.parameterID);
+    query.bindValue(":val", param.newValue);
     query.exec();
+
+    editUndoStack_.push_back(param);
 
     disconnectDB();
 
@@ -643,7 +656,7 @@ void MainWindow::toggleStuffHasBeenEditedSinceLastSave(bool newval)
     resetWindowTitle();
 }
 
-void MainWindow::copyRequest(bool checked)
+void MainWindow::copyToClipboard(bool checked)
 {
     //NOTE: we override the ctrl-c functionality in order to copy the table view correctly. So anything that should be copyable to the clipboard has to be explicitly handled here.
 
@@ -673,5 +686,27 @@ void MainWindow::copyRequest(bool checked)
     else if(ui->textResultsInfo->hasFocus())
     {
         QApplication::clipboard()->setText(ui->textResultsInfo->textCursor().selectedText());
+    }
+}
+
+void MainWindow::undo(bool cheked)
+{
+    if(editUndoStack_.count() > 0)
+    {
+        ParameterEditAction param = editUndoStack_.last();
+        editUndoStack_.pop_back();
+        parameterModel_->setValue(param.parameterID, param.oldValue);
+
+        connectDB();
+        QSqlQuery query;
+        query.prepare( "UPDATE "
+                       " ParameterValues "
+                       " SET "
+                       " value = :val"
+                        " WHERE "
+                        " ID = :id ;");
+        query.bindValue(":id", param.parameterID);
+        query.bindValue(":val", param.oldValue);
+        query.exec();
     }
 }

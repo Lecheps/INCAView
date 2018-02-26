@@ -125,12 +125,16 @@ bool ParameterModel::setData(const QModelIndex & index, const QVariant & value, 
             bool valid = param->value.isValidValue(strVal);
             if(valid)
             {
+                QString oldVal = param->value.getValueDBString();
                 bool valueWasChanged = param->value.setValue(strVal);
 
                 if(valueWasChanged)
                 {
-                    QString dbVal = param->value.getValueDBString();
-                    emit parameterWasEdited(param, ID);
+                    ParameterEditAction editAction;
+                    editAction.parameterID = ID;
+                    editAction.oldValue = oldVal;
+                    editAction.newValue = param->value.getValueDBString();
+                    emit parameterWasEdited(editAction);
                     return true;
                 }
             }
@@ -196,4 +200,12 @@ void ParameterModel::setParameterVisible(int ID)
         visibleParamID_.push_back(ID);
         endInsertRows();
     }
+}
+
+//NOTE! this is only to be used by the MainWindow's undo function
+void ParameterModel::setValue(int ID, QString value)
+{
+    beginResetModel();
+    IDtoParam_[ID]->value.setValue(value);
+    endResetModel();
 }

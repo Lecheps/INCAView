@@ -4,6 +4,12 @@
 #include <QAbstractTableModel>
 #include "parameter.h"
 
+struct ParameterEditAction
+{
+    int parameterID;
+    QString oldValue, newValue;
+};
+
 class ParameterModel : public QAbstractTableModel
 {
     Q_OBJECT
@@ -23,11 +29,13 @@ public:
     void addParameter(int, const QString&, const QString&, const QVariant&, const QVariant&, const QVariant&);
     void clearVisibleParameters();
     void setParameterVisible(int);
+
+    void setValue(int, QString); //NOTE: this is only to be used by the MainWindow's undo function
 private:
     std::vector<int> visibleParamID_;
     std::map<int, Parameter*> IDtoParam_;
 signals:
-    void parameterWasEdited(Parameter*, int);
+    void parameterWasEdited(ParameterEditAction);
 };
 
 #endif // PARAMETERVIEWMODEL_H
