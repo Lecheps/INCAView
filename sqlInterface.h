@@ -1,7 +1,7 @@
 #ifndef SQLINTERFACE_H
 #define SQLINTERFACE_H
 
-#include "sqlite3.h"
+//#include "sqlite3.h"
 #include <QtCore>
 #include <QSqlDatabase>
 #include <QSqlQuery>

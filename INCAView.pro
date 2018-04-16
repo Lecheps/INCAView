@@ -21,7 +21,8 @@ SOURCES += main.cpp\
     qcustomplot.cpp \
     parameter.cpp \
     parametermodel.cpp \
-    lineeditdelegate.cpp
+    lineeditdelegate.cpp \
+    sshInterface.cpp
 
 HEADERS  += mainwindow.h \
     sqlInterface.h \
@@ -30,16 +31,24 @@ HEADERS  += mainwindow.h \
     qcustomplot.h \
     parameter.h \
     parametermodel.h \
-    lineeditdelegate.h
+    lineeditdelegate.h \
+    sshInterface.h
 
 FORMS    += mainwindow.ui
 
 
-unix:!macx: LIBS += -L$$PWD/../Documents/INCA/libraries/sqlite3/libs/ -lsqlite3
+LIBS += -L$$PWD/lib/ -lssh\
+# LIBS += -L$$PWD/libs/ -lpython36\
+        #-L$$PWD/../INCA/INCA/libraries/sqlite3/libs/ -lsqlite3\
+
 
 INCLUDEPATH += $$PWD/../INCA/INCA/libraries/sqlite3\
-               $$PWD/../INCA/INCA/libraries/boost/include
+               $$PWD/../INCA/INCA/libraries/boost/include\
+               $$PWD/include
 DEPENDPATH += $$PWD/../INCA/INCA/libraries/sqlite3
 
 
-unix:!macx: PRE_TARGETDEPS += $$PWD/../INCA/INCA/libraries/sqlite3/libs/libsqlite3.a
+PRE_TARGETDEPS += $$PWD/lib/libssh.dll.a
+#$$PWD/libs/libpython36.a
+                 #$$PWD/../INCA/INCA/libraries/sqlite3/libs/libsqlite3.a\
+

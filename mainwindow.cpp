@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include <functional>
+#include "sshInterface.h"
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -29,7 +30,8 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->tableViewParameters->verticalHeader()->hide();
     ui->tableViewParameters->setEditTriggers(QAbstractItemView::AllEditTriggers);
 
-    //NOTE: we override the ctrl-c functionality in order to copy the table view correctly. So anything that should be copyable to the clipboard has to be explicitly handled in MainWindow::copyRequest.
+    //NOTE: we override the ctrl-c functionality in order to copy the table view correctly.
+    //So anything that should be copyable to the clipboard has to be explicitly handled in MainWindow::copyToClipboard.
     QAction *ctrlc = new QAction("copy");
     ctrlc->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_C));
     QObject::connect(ctrlc, &QAction::triggered, this, &MainWindow::copyToClipboard);
@@ -40,7 +42,7 @@ MainWindow::MainWindow(QWidget *parent) :
     QObject::connect(ctrlz, &QAction::triggered, this, &MainWindow::undo);
     ui->centralWidget->addAction(ctrlz);
 
-    //The graph colors are used to select colors for graphs in the widgetPlotResults widget. Used in MainWindow::updateGraphsAndResultSummary
+    //The graph colors are used to select colors for graphs in the widgetPlotResults. Used in MainWindow::updateGraphsAndResultSummary
     graphColors_ = {{0, 130, 200}, {230, 25, 75}, {60, 180, 75}, {245, 130, 48}, {145, 30, 180},
                     {70, 240, 240}, {240, 50, 230}, {210, 245, 60}, {250, 190, 190}, {0, 128, 128}, {230, 190, 255},
                     {170, 110, 40}, {128, 0, 0}, {170, 255, 195}, {128, 128, 0}, {255, 215, 180}, {0, 0, 128}, {255, 225, 25}};
@@ -53,6 +55,9 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->widgetPlotResults->axisRect(0)->setRangeZoom(Qt::Horizontal);
 
     QObject::connect(ui->widgetPlotResults, QCustomPlot::mouseMove, this, &MainWindow::updateGraphToolTip);
+
+    qDebug(QDir::currentPath().toLatin1().data());
+
 }
 
 MainWindow::~MainWindow()
@@ -75,9 +80,24 @@ void MainWindow::resetWindowTitle()
     setWindowTitle("INCA View");
 }
 
+void MainWindow::on_pushConnect_clicked()
+{
+    if(!ssh.isSessionConnected())
+    {
+        bool success = ssh.connectSession("magnus", "35.197.231.4", "C:\\testkeys\\testkey");
+        if(success)
+        {
+            ui->pushConnect->setEnabled(false);
+        }
+        else
+        {
+            //TODO: error handling.
+        }
+    }
+}
+
 void MainWindow::on_pushLoad_clicked()
 {
-
     QString pathToDB = QFileDialog::getOpenFileName(this,tr("Select output database"),"c:/Users/Magnus/Documents/INCAView/test.db",tr("Database files (*.db)"));
 
     if(!pathToDB.isEmpty()&& !pathToDB.isNull())
@@ -314,6 +334,7 @@ void MainWindow::runINCA()
 
     //Because the results part of the db is changed:
     toggleStuffHasBeenEditedSinceLastSave(true);
+    updateGraphsAndResultSummary();
 }
 
 void MainWindow::updateParameterView(const QItemSelection& selected, const QItemSelection& deselected)
@@ -358,167 +379,254 @@ void MainWindow::updateGraphsAndResultSummary()
     QModelIndexList indexes = ui->treeViewResults->selectionModel()->selectedIndexes();
     int firstunassignedcolor = 0;
 
+    QVector<int> IDs;
     for(auto index : indexes)
     {
         auto idx = index.model()->index(index.row(),index.column() + 1, index.parent());
         int ID = (treeParameters_->itemData(idx))[0].toInt();
         if(index.column() == 0 && ID != 0)
         {
-            connectDB();
-            QSqlQuery query;
-            query.prepare("SELECT value FROM Results "
-                          "WHERE ID=:ID;"
-                        );
-            query.bindValue(":ID",ID);
-            query.exec();
-
-
-            //TODO: Currently times are just for debugging!!! Should read actual times from database.
-            auto startdate = QDateTime::currentDateTime();
-            startdate = QDateTime(startdate.date()); //Remove hours, minutes, seconds
-            uint starttime = startdate.toTime_t();
-
-            QVector<double> xval, yval;
-            int cnt = 0;
-            double min = std::numeric_limits<double>::max();
-            double max = std::numeric_limits<double>::min();
-            while (query.next())
-            {
-                double value = query.value(0).toDouble();
-                xval.append(starttime + 24*3600*(cnt++));
-                yval.append(value);
-                min = value < min ? value : min;
-                max = value > max ? value : max;
-            }
-            disconnectDB();
-
-            if(cnt != 0)
-            {
-                QString name = treeResults_->getName(ID);
-                QString parentName = treeResults_->getParentName(ID);
-                QColor& color = graphColors_[firstunassignedcolor++];
-                if(firstunassignedcolor == graphColors_.count()) firstunassignedcolor = 0; // Cycle the colors
-
-                double mean = 0;
-                for(double d : yval) mean += d;
-                mean /= (double)cnt;
-                double stddev = 0;
-                for(double d : yval) stddev += (d - mean)*(d - mean);
-                stddev = std::sqrt(stddev / (double) cnt);
-
-                ui->textResultsInfo->append(QString(
-                        "%1 (%2) <font color=%3>&#9608;&#9608;</font><br/>" //NOTE: this is somewhat reliant on the font on the local system having the character &#9608; (FULL BLOCK)
-                        "min: %4<br/>"
-                        "max: %5<br/>"
-                        "average: %6<br/>"
-                        "standard deviation: %7<br/>"
-                        "<br/>"
-                      ).arg(name, parentName, color.name())
-                       .arg(min, 0, 'g', 5)                          //TODO: should this be moved below to display the min of yearly averages when yearly averages are selected?
-                       .arg(max, 0, 'g', 5)
-                       .arg(mean, 0, 'g', 5)
-                       .arg(stddev, 0, 'g', 5)
-                );
-
-                QCPGraph* graph = ui->widgetPlotResults->addGraph();
-                graph->setPen(QPen(color));
-
-                if(ui->radioButtonYearlyAverages->isChecked())
-                {
-                    QVector<double> displayedx, displayedy;
-                    min = std::numeric_limits<double>::max();
-                    max = std::numeric_limits<double>::min();
-
-                    QDateTime date = QDateTime::fromTime_t(starttime);
-                    int prevyear = date.date().year();
-                    double sum = 0;
-                    int dayscnt = 0;
-                    for(int i = 0; i < cnt; ++i)
-                    {
-                        sum += yval[i];
-                        dayscnt++;
-                        int curyear = date.date().year();
-                        if(curyear != prevyear)
-                        {
-                            double value = sum / (double) dayscnt;
-                            displayedy.push_back(value);
-                            displayedx.push_back(QDateTime(QDate(prevyear, 1, 1)).toTime_t());
-                            min = value < min ? value : min;
-                            max = value > max ? value : max;
-
-                            sum = 0;
-                            dayscnt = 0;
-                            prevyear = curyear;
-                        }
-                        date = date.addDays(1);
-                    }
-                    QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
-                    dateTicker->setDateTimeFormat("yyyy");
-                    ui->widgetPlotResults->xAxis->setTicker(dateTicker);
-
-                    graph->setData(displayedx, displayedy);
-                }
-                else if(ui->radioButtonMonthlyAverages->isChecked())
-                {
-                    QVector<double> displayedx, displayedy;
-                    min = std::numeric_limits<double>::max();
-                    max = std::numeric_limits<double>::min();
-
-                    QDateTime date = QDateTime::fromTime_t(starttime);
-                    int prevmonth = date.date().month();
-                    int prevyear = date.date().year();
-                    double sum = 0;
-                    int dayscnt = 0;
-                    for(int i = 0; i < cnt; ++i)
-                    {
-                        sum += yval[i];
-                        dayscnt++;
-                        int curmonth = date.date().month();
-                        if(curmonth != prevmonth)
-                        {
-                            double value = sum / (double) dayscnt;
-                            displayedy.push_back(value);
-                            displayedx.push_back(QDateTime(QDate(prevyear, prevmonth, 1)).toTime_t());
-                            min = value < min ? value : min;
-                            max = value > max ? value : max;
-
-                            sum = 0;
-                            dayscnt = 0;
-                            prevmonth = curmonth;
-                            prevyear = date.date().year();
-                        }
-                        date = date.addDays(1);
-                    }
-                    QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
-                    dateTicker->setDateTimeFormat("MMMM\nyyyy");
-                    ui->widgetPlotResults->xAxis->setTicker(dateTicker);
-
-                    graph->setData(displayedx, displayedy);
-                }
-                else
-                {
-                    QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
-                    dateTicker->setDateTimeFormat("d. MMMM\nyyyy");
-                    ui->widgetPlotResults->xAxis->setTicker(dateTicker);
-
-                    graph->setData(xval, yval);
-                }
-
-                QCPRange existingYRange = ui->widgetPlotResults->yAxis->range();
-                double newmax = existingYRange.upper < max ? max : existingYRange.upper;
-                double newmin = existingYRange.lower > min ? min : existingYRange.lower;
-                if(newmax - newmin < QCPRange::minRange)
-                {
-                    newmax = newmin + 2.0*QCPRange::minRange;
-                }
-                ui->widgetPlotResults->yAxis->setRange(newmin, newmax);
-
-                if(ui->widgetPlotResults->xAxis->range().upper - ui->widgetPlotResults->xAxis->range().lower < 1.0) //TODO: is there a better way to check if it is uninitialized?
-                    ui->widgetPlotResults->xAxis->setRange(xval.first(), xval.last());
-
-            }
+            IDs.push_back(ID);
         }
     }
+
+    void *filedata = 0;
+    size_t filesize;
+
+    if(IDs.count() && ssh.isSessionConnected())
+    {
+        QString command = "./testdirectory/sqlhandler results test.db data.dat";
+        for(int ID : IDs)
+        {
+            command += " " + QString::number(ID);
+        }
+
+        qDebug(command.toLatin1().data());
+
+        ssh.runCommand(command.toLatin1().data());
+
+        ssh.readFile(&filedata, &filesize, "~/data.dat");
+    }
+
+    uint8_t *data = (uint8_t *)filedata;
+    uint64_t numresults = *(uint64_t *)data;
+
+    qDebug(QString::number(filesize).toLatin1().data());
+    qDebug(QString::number(numresults).toLatin1().data());
+    qDebug(QString::number(IDs.count()).toLatin1().data());
+
+    data += sizeof(uint64_t);
+
+    for(int ID : IDs)
+    {
+#define DATA_METHOD 1
+        //TODO: Currently times are just for debugging!!! Should read actual times from a different source.
+        auto startdate = QDateTime::currentDateTime();
+        startdate = QDateTime(startdate.date()); //Remove hours, minutes, seconds
+        uint starttime = startdate.toTime_t();
+        double min = std::numeric_limits<double>::max();
+        double max = std::numeric_limits<double>::min();
+#if DATA_METHOD == 0
+        FILE *debugData = fopen("data.dat", "r");
+        uint64_t numresults = 0;
+        fread(&numresults, sizeof(uint64_t), 1, debugData);
+        qDebug("In debug file, numresults was:");
+        qDebug(QString::number(numresults).toLatin1().data());
+        //Q_ASSERT(numresults == 1);
+        uint64_t count = 0;
+        fread(&count, sizeof(uint64_t), 1, debugData);
+        qDebug("In debug file, count was:");
+        qDebug(QString::number(count).toLatin1().data());
+        int cnt = (int)count;
+        double *data = (double *)malloc(sizeof(double)*cnt);
+        fread(data, sizeof(double)*cnt, 1, debugData);
+        fclose(debugData);
+        QVector<double> xval(cnt);
+        QVector<double> yval(cnt);
+        double *data_double = data;
+        for(int i = 0; i < cnt; ++i)
+        {
+            double value = *data_double;
+            xval[i] = (double)(starttime + 24*3600*i);
+            yval[i] = value;
+            min = value < min ? value : min;
+            max = value > max ? value : max;
+            ++data_double;
+        }
+#elif DATA_METHOD == 1
+        uint64_t count = *(uint64_t *)data;
+        data += sizeof(uint64_t);
+        int cnt = (int)count;
+        qDebug(QString::number(count).toLatin1().data());
+        qDebug(QString::number(cnt).toLatin1().data());
+
+        Q_ASSERT(sizeof(double)==8); //If this is not the case, someone has to write reformatting code for the data.
+        QVector<double> xval(cnt);
+        QVector<double> yval(cnt);
+
+        double *data_double = (double *)data;
+        for(int i = 0; i < cnt; ++i)
+        {
+            double value = *data_double;
+            xval[i] = (double)(starttime + 24*3600*i);
+            yval[i] = value;
+            min = value < min ? value : min;
+            max = value > max ? value : max;
+            ++data_double;
+        }
+        data += cnt*sizeof(double);
+#else
+        connectDB();
+        QSqlQuery query;
+        query.prepare("SELECT value FROM Results "
+                      "WHERE ID=:ID;"
+                    );
+        query.bindValue(":ID",ID);
+        query.exec();
+
+
+        QVector<double> xval, yval;
+        int cnt = 0;
+
+        while (query.next())
+        {
+            double value = query.value(0).toDouble();
+            xval.append(starttime + 24*3600*(cnt++));
+            yval.append(value);
+            min = value < min ? value : min;
+            max = value > max ? value : max;
+        }
+        disconnectDB();
+#endif
+
+        if(cnt != 0)
+        {
+            QString name = treeResults_->getName(ID);
+            QString parentName = treeResults_->getParentName(ID);
+            QColor& color = graphColors_[firstunassignedcolor++];
+            if(firstunassignedcolor == graphColors_.count()) firstunassignedcolor = 0; // Cycle the colors
+
+            double mean = 0;
+            for(double d : yval) mean += d;
+            mean /= (double)cnt;
+            double stddev = 0;
+            for(double d : yval) stddev += (d - mean)*(d - mean);
+            stddev = std::sqrt(stddev / (double) cnt);
+
+            ui->textResultsInfo->append(QString(
+                    "%1 (%2) <font color=%3>&#9608;&#9608;</font><br/>" //NOTE: this is somewhat reliant on the font on the local system having the character &#9608; (FULL BLOCK)
+                    "min: %4<br/>"
+                    "max: %5<br/>"
+                    "average: %6<br/>"
+                    "standard deviation: %7<br/>"
+                    "<br/>"
+                  ).arg(name, parentName, color.name())
+                   .arg(min, 0, 'g', 5)                          //TODO: should this be moved below to display the min of yearly averages when yearly averages are selected?
+                   .arg(max, 0, 'g', 5)
+                   .arg(mean, 0, 'g', 5)
+                   .arg(stddev, 0, 'g', 5)
+            );
+
+            QCPGraph* graph = ui->widgetPlotResults->addGraph();
+            graph->setPen(QPen(color));
+
+            if(ui->radioButtonYearlyAverages->isChecked())
+            {
+                QVector<double> displayedx, displayedy;
+                min = std::numeric_limits<double>::max();
+                max = std::numeric_limits<double>::min();
+
+                QDateTime date = QDateTime::fromTime_t(starttime);
+                int prevyear = date.date().year();
+                double sum = 0;
+                int dayscnt = 0;
+                for(int i = 0; i < cnt; ++i)
+                {
+                    sum += yval[i];
+                    dayscnt++;
+                    int curyear = date.date().year();
+                    if(curyear != prevyear)
+                    {
+                        double value = sum / (double) dayscnt;
+                        displayedy.push_back(value);
+                        displayedx.push_back(QDateTime(QDate(prevyear, 1, 1)).toTime_t());
+                        min = value < min ? value : min;
+                        max = value > max ? value : max;
+
+                        sum = 0;
+                        dayscnt = 0;
+                        prevyear = curyear;
+                    }
+                    date = date.addDays(1);
+                }
+                QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
+                dateTicker->setDateTimeFormat("yyyy");
+                ui->widgetPlotResults->xAxis->setTicker(dateTicker);
+
+                graph->setData(displayedx, displayedy);
+            }
+            else if(ui->radioButtonMonthlyAverages->isChecked())
+            {
+                QVector<double> displayedx, displayedy;
+                min = std::numeric_limits<double>::max();
+                max = std::numeric_limits<double>::min();
+
+                QDateTime date = QDateTime::fromTime_t(starttime);
+                int prevmonth = date.date().month();
+                int prevyear = date.date().year();
+                double sum = 0;
+                int dayscnt = 0;
+                for(int i = 0; i < cnt; ++i)
+                {
+                    sum += yval[i];
+                    dayscnt++;
+                    int curmonth = date.date().month();
+                    if(curmonth != prevmonth)
+                    {
+                        double value = sum / (double) dayscnt;
+                        displayedy.push_back(value);
+                        displayedx.push_back(QDateTime(QDate(prevyear, prevmonth, 1)).toTime_t());
+                        min = value < min ? value : min;
+                        max = value > max ? value : max;
+
+                        sum = 0;
+                        dayscnt = 0;
+                        prevmonth = curmonth;
+                        prevyear = date.date().year();
+                    }
+                    date = date.addDays(1);
+                }
+                QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
+                dateTicker->setDateTimeFormat("MMMM\nyyyy");
+                ui->widgetPlotResults->xAxis->setTicker(dateTicker);
+
+                graph->setData(displayedx, displayedy);
+            }
+            else
+            {
+                QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
+                dateTicker->setDateTimeFormat("d. MMMM\nyyyy");
+                ui->widgetPlotResults->xAxis->setTicker(dateTicker);
+
+                graph->setData(xval, yval);
+            }
+
+            QCPRange existingYRange = ui->widgetPlotResults->yAxis->range();
+            double newmax = existingYRange.upper < max ? max : existingYRange.upper;
+            double newmin = existingYRange.lower > min ? min : existingYRange.lower;
+            if(newmax - newmin < QCPRange::minRange)
+            {
+                newmax = newmin + 2.0*QCPRange::minRange;
+            }
+            ui->widgetPlotResults->yAxis->setRange(newmin, newmax);
+
+            if(ui->widgetPlotResults->xAxis->range().upper - ui->widgetPlotResults->xAxis->range().lower < 1.0) //TODO: is there a better way to check if it is uninitialized?
+                ui->widgetPlotResults->xAxis->setRange(xval.first(), xval.last());
+
+        }
+    }
+    if(filedata) free(filedata);
+
     ui->widgetPlotResults->replot();
     updateGraphToolTip(0); // Just to clear it.
 }

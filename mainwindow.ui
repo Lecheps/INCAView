@@ -72,7 +72,7 @@
            </size>
           </property>
          </widget>
-         <widget class="QWidget" name="">
+         <widget class="QWidget" name="layoutWidget">
           <layout class="QVBoxLayout" name="verticalLayout">
            <property name="sizeConstraint">
             <enum>QLayout::SetDefaultConstraint</enum>
@@ -158,6 +158,13 @@ Values:</string>
            </size>
           </property>
          </spacer>
+        </item>
+        <item>
+         <widget class="QPushButton" name="pushConnect">
+          <property name="text">
+           <string>Connect to cloud</string>
+          </property>
+         </widget>
         </item>
         <item>
          <widget class="QPushButton" name="pushLoad">

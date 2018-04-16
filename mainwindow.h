@@ -14,6 +14,7 @@
 #include <QLabel>
 #include <boost/variant.hpp>
 //#include "qcustomplot.h"
+#include "sshInterface.h"
 
 namespace Ui {
 class MainWindow;
@@ -30,6 +31,7 @@ public:
 
 private slots:
 
+    void on_pushConnect_clicked();
     void on_pushLoad_clicked();
     void on_pushSave_clicked();
     void on_pushSaveAs_clicked();
@@ -73,6 +75,8 @@ private:
     QVector<QColor> graphColors_;
 
     QVector<ParameterEditAction> editUndoStack_;
+
+    SSHInterface ssh;
 };
 
 
