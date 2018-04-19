@@ -21,7 +21,7 @@ typedef double f64;
 
 #include "parameterserialization.h"
 
-void print_parameter_value(char *buffer, parameter_update_entry *entry)
+void print_parameter_value(char *buffer, parameter_serial_entry *entry)
 {
 	parameter_type type = (parameter_type)entry->type;
 	switch(type)
@@ -43,7 +43,7 @@ void print_parameter_value(char *buffer, parameter_update_entry *entry)
 		
 		case parametertype_ptime:
 		{
-			sprintf(buffer, "%u" PRIu64 "", entry->value.val_ptime);
+			sprintf(buffer, "%d", entry->value.val_ptime);
 		} break;
 	}
 }
@@ -59,8 +59,8 @@ void handle_parameter_write_request(sqlite3 *db, const char *infilename)
 	fread(&numparameters, sizeof(u64), 1, file);
 	for(int i = 0; i < numparameters; ++i)
 	{
-		parameter_update_entry entry;
-		fread(&entry, sizeof(parameter_update_entry), 1, file);
+		parameter_serial_entry entry;
+		fread(&entry, sizeof(parameter_serial_entry), 1, file);
 		
 		char valuestring[64];
 		print_parameter_value(valuestring, &entry);
@@ -83,7 +83,7 @@ void handle_parameter_write_request(sqlite3 *db, const char *infilename)
 
 void write_parameter_update_test_file(char *filename)
 {
-	parameter_update_entry entries[3] =
+	parameter_serial_entry entries[3] =
 	{
 		(u32)parametertype_uint, (u32)3, (u64)4,
 		(u32)parametertype_double, (u32)4, 1.0,
@@ -93,7 +93,7 @@ void write_parameter_update_test_file(char *filename)
 	u64 count = 3;
 	FILE *file = fopen(filename, "w");
 	fwrite(&count, sizeof(u64), 1, file);
-	fwrite(entries, sizeof(parameter_update_entry)*count, 1, file);
+	fwrite(entries, sizeof(parameter_serial_entry)*count, 1, file);
 	
 	fclose(file);
 }
@@ -239,7 +239,7 @@ int main(int argc, char *argv[])
 			}
 			else if(strcmp(argv[1], "write_parameters") == 0)
 			{
-				write_parameter_update_test_file(filename);
+				//write_parameter_update_test_file(filename);
 				
 				handle_parameter_write_request(db, filename);
 			}

@@ -21,7 +21,7 @@ struct parameter_value
     };
 };
 
-struct parameter_update_entry
+struct parameter_serial_entry
 {
     uint32_t type;
     uint32_t ID;
