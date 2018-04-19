@@ -32,7 +32,8 @@ HEADERS  += mainwindow.h \
     parameter.h \
     parametermodel.h \
     lineeditdelegate.h \
-    sshInterface.h
+    sshInterface.h \
+    parameterserialization.h
 
 FORMS    += mainwindow.ui
 

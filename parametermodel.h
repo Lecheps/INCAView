@@ -7,7 +7,7 @@
 struct ParameterEditAction
 {
     int parameterID;
-    QString oldValue, newValue;
+    ParameterValue oldValue, newValue;
 };
 
 class ParameterModel : public QAbstractTableModel
@@ -26,11 +26,13 @@ public:
     Qt::ItemFlags flags(const QModelIndex &index) const;
 
     bool areAllParametersInRange() const;
-    void addParameter(int, const QString&, const QString&, const QVariant&, const QVariant&, const QVariant&);
+    void addParameter(int, int, const QString&, const QString&, const QVariant&, const QVariant&, const QVariant&);
     void clearVisibleParameters();
-    void setParameterVisible(int);
+    void setChildrenVisible(int);
 
-    void setValue(int, QString); //NOTE: this is only to be used by the MainWindow's undo function
+    void *serializeParameterData(size_t *size);
+
+    void setValue(int, ParameterValue&); //NOTE: this is only to be used by the MainWindow's undo function
 private:
     std::vector<int> visibleParamID_;
     std::map<int, Parameter*> IDtoParam_;

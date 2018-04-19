@@ -141,6 +141,7 @@ QString ParameterValue::getValueDisplayString(int precision)
     return "";
 }
 
+/*
 QString ParameterValue::getValueDBString()
 {
     // This is for storing the value back in the database. Must match how this type is represented in SQLLite db by INCA.
@@ -174,6 +175,7 @@ QString ParameterValue::getValueDBString()
     }
     return "";
 }
+*/
 
 int ParameterValue::isNotInRange(const ParameterValue& min, const ParameterValue& max)
 {
@@ -197,7 +199,7 @@ int ParameterValue::isNotInRange(const ParameterValue& min, const ParameterValue
 
     case BOOL:
     {
-        return true;
+        return 0;
     } break;
 
     case PTIME:
@@ -217,8 +219,6 @@ int ParameterValue::isNotInRange(const ParameterValue& min, const ParameterValue
 
     return false;
 }
-
-// LAYOUTFORPARAMETER
 
 Parameter::Parameter(const QString& name, ParameterValue& value, ParameterValue& min, ParameterValue& max)
 {

@@ -25,14 +25,13 @@ public:
     bool isValidValue(const QVariant &);
     bool setValue(const QVariant &valueVar);
     QString getValueDisplayString(int precision = 10);
-    QString getValueDBString();
+    //QString getValueDBString();
     int isNotInRange(const ParameterValue&, const ParameterValue&);
 
-private:
     union
     {
         double Double;
-        uint64_t Uint; // The database may not support this precision, but there is no reason to not use as many bits as possible here.
+        uint64_t Uint;
         int64_t Bool;
         int64_t Time; // In seconds since 1-1-1970, i.e. posix time.
     } value;
@@ -48,6 +47,7 @@ public:
     ParameterValue value;
     ParameterValue min;
     ParameterValue max;
+    int parentID;
 
     bool IsInRange() { return !value.isNotInRange(min, max); }
 };

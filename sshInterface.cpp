@@ -111,12 +111,10 @@ bool SSHInterface::runCommand(const char *command)
 
 bool SSHInterface::writeFile(const void *contents, size_t contentssize, const char *remotelocation, const char *remotefilename)
 {
-    //remotelocation = "~/testdirectory/"
     bool success = false;
 
     if(session_)
     {
-        //TODO: For optimization, keep scp channel open once it is opened?
         ssh_scp scp = ssh_scp_new(session_, SSH_SCP_WRITE, remotelocation);
         if(scp)
         {
@@ -170,7 +168,6 @@ bool SSHInterface::readFile(void **buffer, size_t* buffersize, const char *remot
 
     if(session_)
     {
-        //TODO: For optimization, keep scp channel open once it is opened?
         ssh_scp scp = ssh_scp_new(session_, SSH_SCP_READ, remotefilename);
         if(scp)
         {
@@ -184,6 +181,8 @@ bool SSHInterface::readFile(void **buffer, size_t* buffersize, const char *remot
             }
 
             rc = ssh_scp_pull_request(scp);
+            //TODO: This should to be more robust!
+            // The pull request can also return warnings and so on that could be handled.
             if(rc != SSH_SCP_REQUEST_NEWFILE)
             {
                 qDebug("SSH: Error receiving information about file.");

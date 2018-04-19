@@ -1,24 +1,22 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include "sshInterface.h"
+#include "treemodel.h"
+#include "parametermodel.h"
+#include "lineeditdelegate.h"
 #include <QMainWindow>
 #include "QtCore"
 #include "QtGui"
 #include "QFileDialog"
 #include <QSqlTableModel>
-#include "treemodel.h"
-#include "parametermodel.h"
-#include "lineeditdelegate.h"
 #include <QFile>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <boost/variant.hpp>
-//#include "qcustomplot.h"
-#include "sshInterface.h"
+
 
 namespace Ui {
 class MainWindow;
-class TreeItem;
 }
 
 class MainWindow : public QMainWindow, virtual protected sqlInterface
@@ -33,8 +31,8 @@ private slots:
 
     void on_pushConnect_clicked();
     void on_pushLoad_clicked();
-    void on_pushSave_clicked();
-    void on_pushSaveAs_clicked();
+    //void on_pushSave_clicked();
+    //void on_pushSaveAs_clicked();
     void on_pushRun_clicked();
     void closeEvent (QCloseEvent *);
 
@@ -47,16 +45,17 @@ private slots:
 
 private:
 
-    void populateParameterModel(ParameterModel*);
-    void populateTreeModel(TreeModel*, const QString&, bool);
+    //void populateParameterModel(ParameterModel*);
+    void populateTreeModelResults(TreeModel*);
+    void populateParameterModels(TreeModel*, ParameterModel*);
 
     void toggleStuffHasBeenEditedSinceLastSave(bool);
 
     void runINCA();
 
     static bool copyAndOverwriteFile(const QString&, const QString&);
-    bool saveCheckParameters();
-    bool tryToSave(const QString&, const QString&);
+    //bool saveCheckParameters();
+    //bool tryToSave(const QString&, const QString&);
 
     void resetWindowTitle();
 

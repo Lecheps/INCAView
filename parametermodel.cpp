@@ -125,7 +125,7 @@ bool ParameterModel::setData(const QModelIndex & index, const QVariant & value, 
             bool valid = param->value.isValidValue(strVal);
             if(valid)
             {
-                QString oldVal = param->value.getValueDBString();
+                ParameterValue oldVal = param->value;
                 bool valueWasChanged = param->value.setValue(strVal);
 
                 if(valueWasChanged)
@@ -133,7 +133,7 @@ bool ParameterModel::setData(const QModelIndex & index, const QVariant & value, 
                     ParameterEditAction editAction;
                     editAction.parameterID = ID;
                     editAction.oldValue = oldVal;
-                    editAction.newValue = param->value.getValueDBString();
+                    editAction.newValue = param->value;
                     emit parameterWasEdited(editAction);
                     return true;
                 }
@@ -172,12 +172,13 @@ bool ParameterModel::areAllParametersInRange() const
     return result;
 }
 
-void ParameterModel::addParameter(int ID, const QString& name, const QString& typeStr, const QVariant &valueVar, const QVariant &minVar, const QVariant &maxVar)
+void ParameterModel::addParameter(int ID, int parentID, const QString& name, const QString& typeStr, const QVariant &valueVar, const QVariant &minVar, const QVariant &maxVar)
 {
     ParameterValue value(valueVar, typeStr);
     ParameterValue min(minVar, typeStr);
     ParameterValue max(maxVar, typeStr);
     Parameter *param = new Parameter(name, value, min, max);
+    param->parentID = parentID;
     IDtoParam_[ID] = param;
 }
 
@@ -191,21 +192,85 @@ void ParameterModel::clearVisibleParameters()
     }
 }
 
-void ParameterModel::setParameterVisible(int ID)
+void ParameterModel::setChildrenVisible(int parentID)
 {
-    if(IDtoParam_.count(ID) != 0 && std::find(visibleParamID_.begin(), visibleParamID_.end(), ID) == visibleParamID_.end())
+    for(auto id_par : IDtoParam_)
     {
-        int newindex = visibleParamID_.size();
-        beginInsertRows(QModelIndex(), newindex, newindex);
-        visibleParamID_.push_back(ID);
-        endInsertRows();
+        Parameter *param = id_par.second;
+        int childID = id_par.first;
+        if(param->parentID == parentID)
+        {
+            int newindex = visibleParamID_.size();
+            beginInsertRows(QModelIndex(), newindex, newindex);
+            visibleParamID_.push_back(childID);
+            endInsertRows();
+        }
     }
 }
 
 //NOTE! this is only to be used by the MainWindow's undo function
-void ParameterModel::setValue(int ID, QString value)
+void ParameterModel::setValue(int ID, ParameterValue& value)
 {
     beginResetModel();
-    IDtoParam_[ID]->value.setValue(value);
+    IDtoParam_[ID]->value = value;
     endResetModel();
+}
+
+#include "sqlhandler/parameterserialization.h"
+
+void* ParameterModel::serializeParameterData(size_t *size)
+{
+
+    QVector<parameter_serial_entry> outdata;
+    for(auto par_pair : IDtoParam_)
+    {
+        uint32_t ID = par_pair.first;
+        Parameter *param = par_pair.second;
+
+        parameter_serial_entry entry = {};
+        entry.ID = ID;
+        switch(param->value.type)
+        {
+            case ParameterValue::DOUBLE:
+            {
+                entry.type = parametertype_double;
+                entry.value.val_double = param->value.value.Double;
+            } break;
+
+            case ParameterValue::BOOL:
+            {
+                entry.type = parametertype_bool;
+                entry.value.val_bool = param->value.value.Bool;
+            } break;
+
+            case ParameterValue::UINT:
+            {
+                entry.type = parametertype_uint;
+                entry.value.val_uint = param->value.value.Uint;
+            } break;
+
+            case ParameterValue::PTIME:
+            {
+                entry.type = parametertype_ptime;
+                entry.value.val_ptime = param->value.value.Time;
+            } break;
+
+            case ParameterValue::UNKNOWN:
+            {
+                qDebug("Tried to serialize unknown parameter type.");
+            } break;
+        }
+        outdata.push_back(entry);
+    }
+
+    uint64_t count = outdata.count();
+    *size = sizeof(uint64_t) + count*sizeof(parameter_serial_entry);
+    void *result = malloc(*size);
+
+    uint8_t *data = (uint8_t *)result;
+    *(uint64_t *)data = count;
+    data += sizeof(uint64_t);
+    memcpy(data, outdata.data(), count*sizeof(parameter_serial_entry));
+
+    return result;
 }
