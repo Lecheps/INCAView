@@ -1,6 +1,9 @@
 #ifndef PARAMETERSERIALIZATION_H
 #define PARAMETERSERIALIZATION_H
 
+
+#pragma pack(push, 1)
+
 enum parameter_type
 {
     parametertype_double,
@@ -28,5 +31,13 @@ struct parameter_serial_entry
     parameter_value value;
 };
 
+struct results_structure_serial_entry
+{
+    uint32_t parentID;
+    uint32_t childID;
+    uint32_t childNameLen;
+};
+
+#pragma pack(pop)
 
 #endif // PARAMETERSERIALIZATION_H

@@ -2,6 +2,7 @@
 #include "ui_mainwindow.h"
 #include <functional>
 #include "sshInterface.h"
+#include "sqlhandler/parameterserialization.h"
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -12,7 +13,7 @@ MainWindow::MainWindow(QWidget *parent) :
     //ui->pushSave->setEnabled(false);
     //ui->pushSaveAs->setEnabled(false);
     ui->pushRun->setEnabled(false);
-    ui->pushConnect->setEnabled(false);
+    //ui->pushConnect->setEnabled(false);
 
     ui->radioButtonDaily->click();
     ui->radioButtonDaily->setEnabled(false);
@@ -91,7 +92,7 @@ void MainWindow::on_pushConnect_clicked()
         {
             ui->pushRun->setEnabled(true);
 
-            updateGraphsAndResultSummary();
+            //updateGraphsAndResultSummary();
         }
         else
         {
@@ -345,7 +346,7 @@ void MainWindow::runINCA()
     free(parameterdata);
 
     //Run the remote tool to put the data from the parameter file into the remote database.
-    ssh.runCommand("./testdirectory/sqlhandler write_parameters test.db parameter.dat");
+    ssh.runCommand("./testdirectory/sqlhandler import_parameter_values test.db parameter.dat");
 
     //TODO: actually run INCA
 
@@ -396,7 +397,7 @@ void MainWindow::updateGraphsAndResultSummary()
 
         if(IDs.count() && ssh.isSessionConnected())
         {
-            QString command = "./testdirectory/sqlhandler results test.db data.dat";
+            QString command = "./testdirectory/sqlhandler export_result_values test.db data.dat";
             for(int ID : IDs)
             {
                 command += " " + QString::number(ID);
@@ -713,6 +714,7 @@ void MainWindow::populateParameterModels(TreeModel* treemodel, ParameterModel *p
 
 void MainWindow::populateTreeModelResults(TreeModel* model)
 {
+    /*
     connectDB();
     QSqlQueryModel query;
     query.setQuery(QString("SELECT parent.ID as parentID, child.ID, child.Name "
@@ -734,6 +736,29 @@ void MainWindow::populateTreeModelResults(TreeModel* model)
         model->addItem(childName, childID, parentID);
     }
     disconnectDB();
+    */
+    if(ssh.isSessionConnected())
+    {
+        ssh.runCommand("./testdirectory/sqlhandler export_results_structure test.db resultsstructure.dat");
+
+        void *filedata = 0;
+        size_t filesize;
+        ssh.readFile(&filedata, &filesize, "~/resultsstructure.dat");
+        uint8_t *at = (uint8_t *)filedata;
+        while(at != filedata + filesize)
+        {
+            results_structure_serial_entry *entry = (results_structure_serial_entry *)at;
+            at += sizeof(results_structure_serial_entry);
+
+            int parentID = (int)entry->parentID;
+            int childID = (int)entry->childID;
+
+            std::string str((char *)at, (char *)at + entry->childNameLen); //Is there a better way to get a QString from a range based char * (not nullterminated)?
+            model->addItem(QString::fromStdString(str), childID, parentID);
+
+            at += entry->childNameLen;
+        }
+    }
 }
 
 void MainWindow::parameterWasEdited(ParameterEditAction param)

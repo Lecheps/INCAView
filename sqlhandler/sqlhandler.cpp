@@ -21,6 +21,52 @@ typedef double f64;
 
 #include "parameterserialization.h"
 
+
+
+static int export_results_structure_callback(void *data, int argc, char **argv, char **colname)
+{
+	FILE *file = (FILE *)data;
+
+	assert(argc == 3);
+	results_structure_serial_entry outdata;
+	outdata.parentID = atoi(argv[0]);
+	outdata.childID = atoi(argv[1]);
+	char *childName = argv[2];
+	outdata.childNameLen = strlen(childName);
+	
+	//fprintf(stdout, "%u %u %u %s\n", outdata.parentID, outdata.childID, outdata.childNameLen, childName);
+	
+	fwrite(&outdata, sizeof(outdata), 1, file);
+	fwrite(childName, outdata.childNameLen, 1, file);
+	return 0;
+}
+
+void export_results_structure(sqlite3 *db, const char *infilename)
+{
+	FILE *file = fopen(infilename, "w");
+	const char *sqlcommand = "SELECT parent.ID AS parentID, child.ID, child.Name "
+                          "FROM ResultsStructure AS parent, ResultsStructure AS child "
+                          "WHERE child.lft > parent.lft "
+                          "AND child.rgt < parent.rgt "
+                          "AND child.dpt = parent.dpt + 1 "
+                          "UNION "
+                          "SELECT 0 as parentID, child.ID, child.Name "
+                          "FROM ResultsStructure as child "
+                          "WHERE child.dpt = 0;";
+	char *errmsg = 0;
+	int rc = sqlite3_exec(db, sqlcommand, export_results_structure_callback, (void *)file, &errmsg);
+	
+	if( rc != SQLITE_OK )
+	{
+		fprintf(stderr, "SQL error: %s\n", errmsg);
+		sqlite3_free(errmsg);
+		fclose(file);
+		return;
+	}
+	
+	fclose(file);
+}
+
 void print_parameter_value(char *buffer, parameter_serial_entry *entry)
 {
 	parameter_type type = (parameter_type)entry->type;
@@ -48,7 +94,7 @@ void print_parameter_value(char *buffer, parameter_serial_entry *entry)
 	}
 }
 
-void handle_parameter_write_request(sqlite3 *db, const char *infilename)
+void import_parameter_values(sqlite3 *db, const char *infilename)
 {
 	FILE *file = fopen(infilename, "r");
 	if(!file)
@@ -81,34 +127,15 @@ void handle_parameter_write_request(sqlite3 *db, const char *infilename)
 	fclose(file);
 }
 
-void write_parameter_update_test_file(char *filename)
-{
-	parameter_serial_entry entries[3] =
-	{
-		(u32)parametertype_uint, (u32)3, (u64)4,
-		(u32)parametertype_double, (u32)4, 1.0,
-		(u32)parametertype_double, (u32)7, 2.5,
-	};
-	
-	u64 count = 3;
-	FILE *file = fopen(filename, "w");
-	fwrite(&count, sizeof(u64), 1, file);
-	fwrite(entries, sizeof(parameter_serial_entry)*count, 1, file);
-	
-	fclose(file);
-}
-
-
-
-struct callback_data
+struct export_result_values_callback_data
 {
 	FILE *outfile;
 	u64 count;
 };
 
-static int results_callback(void *data, int argc, char **argv, char **colname)
+static int export_result_values_callback(void *data, int argc, char **argv, char **colname)
 {
-	callback_data *outdata = (callback_data *)data;
+	export_result_values_callback_data *outdata = (export_result_values_callback_data *)data;
 	++outdata->count;
 	
 	f64 value;
@@ -120,14 +147,14 @@ static int results_callback(void *data, int argc, char **argv, char **colname)
 	return 0;
 }
 
-static int count_callback(void *data, int argc, char **argv, char **colname)
+static int export_result_values_count_callback(void *data, int argc, char **argv, char **colname)
 {
 	u64 *count = (u64 *)data;
 	*count = (u64)atoi(argv[0]); //TODO: Do we need to support larger numbers than what is handled by atoi?
 	return 0;
 }
 
-void handle_results_request(sqlite3 *db, u32 numrequests, u32* requested_ids, const char *outfilename)
+void export_result_values(sqlite3 *db, u32 numrequests, u32* requested_ids, const char *outfilename)
 {
 	FILE *file = fopen(outfilename, "w");
 	if(!file)
@@ -143,7 +170,7 @@ void handle_results_request(sqlite3 *db, u32 numrequests, u32* requested_ids, co
 		sprintf(sqlcount, "SELECT count(*) FROM Results WHERE ID=%d;", requested_ids[i]);
 		char *errmsg = 0;
 		u64 count;
-		int rc = sqlite3_exec(db, sqlcount, count_callback, (void *)&count, &errmsg);
+		int rc = sqlite3_exec(db, sqlcount, export_result_values_count_callback, (void *)&count, &errmsg);
 		if( rc != SQLITE_OK )
 		{
 			fprintf(stderr, "SQL error: %s\n", errmsg);
@@ -156,10 +183,10 @@ void handle_results_request(sqlite3 *db, u32 numrequests, u32* requested_ids, co
 		char sqlcommand[256];
 		sprintf(sqlcommand, "SELECT value FROM Results WHERE ID=%d;", requested_ids[i]);
 		
-		callback_data outdata;
+		export_result_values_callback_data outdata;
 		outdata.outfile = file;
 		outdata.count = 0;
-		rc = sqlite3_exec(db, sqlcommand, results_callback, (void *)&outdata, &errmsg);
+		rc = sqlite3_exec(db, sqlcommand, export_result_values_callback, (void *)&outdata, &errmsg);
 		
 		if( rc != SQLITE_OK )
 		{
@@ -174,30 +201,10 @@ void handle_results_request(sqlite3 *db, u32 numrequests, u32* requested_ids, co
 	fclose(file);
 }
 
-void test_results_file(const char *filename)
-{
-	fprintf(stdout, "Testing the results file:\n");
-	FILE *file = fopen(filename, "r");
-	u64 numresults;
-	fread(&numresults, sizeof(u64), 1, file);
-	fprintf(stdout, "Number of result sets: %I64u\n", numresults);
-	
-	if(numresults < 50) // sanity check
-	{
-		for(u32 i = 0; i < numresults; ++i)
-		{
-			u64 count;
-			fread(&count, sizeof(u64), 1, file);
-			fprintf(stdout, "Result with count %I64u\n", count);
-			
-			f64 *data = (f64 *)malloc(count*sizeof(f64));
-			fread(data, count*sizeof(f64), 1, file);
-			free(data);
-		}
-	}
-}
 
-
+void test_result_values_file(const char *filename);
+void test_results_structure_file(const char *filename);
+void write_parameter_import_test_file(const char *filename);
 
 int main(int argc, char *argv[])
 {
@@ -217,7 +224,7 @@ int main(int argc, char *argv[])
 		else
 		{
 			fprintf(stdout, "Succeeded in opening database!\n");
-			if(strcmp(argv[1], "results") == 0)
+			if(strcmp(argv[1], "export_result_values") == 0)
 			{
 				u32 numrequests = argc - 4;
 				if(numrequests > 0)
@@ -230,22 +237,92 @@ int main(int argc, char *argv[])
 						//TODO: check if format was correct
 						requested_ids[i] = ID;
 					}
-					handle_results_request(db, numrequests, requested_ids, filename);
+					export_result_values(db, numrequests, requested_ids, filename);
 					
 					free(requested_ids);
 					
-					//test_results_file(filename);
+					//test_result_values_file(filename);
 				}
 			}
-			else if(strcmp(argv[1], "write_parameters") == 0)
+			else if(strcmp(argv[1], "import_parameter_values") == 0)
 			{
-				//write_parameter_update_test_file(filename);
+				//write_parameter_import_test_file((filename);
 				
-				handle_parameter_write_request(db, filename);
+				import_parameter_values(db, filename);
+			}
+			else if(strcmp(argv[1], "export_results_structure") == 0)
+			{
+				export_results_structure(db, filename);
+				
+				//test_results_structure_file(filename);
 			}
 		}	
 			
 		sqlite3_close(db);
 	}
 	return 0;
+}
+
+
+
+
+
+//////////// TESTS /////////////////////
+
+void test_result_values_file(const char *filename)
+{
+	fprintf(stdout, "Testing the result values file:\n");
+	FILE *file = fopen(filename, "r");
+	u64 numresults;
+	fread(&numresults, sizeof(u64), 1, file);
+	fprintf(stdout, "Number of result sets: %I64u\n", numresults);
+	
+	if(numresults < 50) // sanity check
+	{
+		for(u32 i = 0; i < numresults; ++i)
+		{
+			u64 count;
+			fread(&count, sizeof(u64), 1, file);
+			fprintf(stdout, "Result with count %I64u\n", count);
+			
+			f64 *data = (f64 *)malloc(count*sizeof(f64));
+			fread(data, count*sizeof(f64), 1, file);
+			free(data);
+		}
+	}
+	fclose(file);
+}
+
+void test_results_structure_file(const char *filename)
+{
+	fprintf(stdout, "Testing the results structure file:\n");
+	FILE *file = fopen(filename, "r");
+	while(!feof(file))
+	{
+		results_structure_serial_entry entry;
+		fread(&entry, sizeof(results_structure_serial_entry), 1, file);
+		assert(entry.childNameLen < 512);
+		char childNameBuf[512];
+		fread(childNameBuf, entry.childNameLen, 1, file);
+		childNameBuf[entry.childNameLen] = 0;
+		fprintf(stdout, "Entry: parentID: %u, childID: %u, childNameLen: %u, childName: %s\n", entry.parentID, entry.childID, entry.childNameLen, childNameBuf);
+	}
+	fclose(file);
+}
+
+void write_parameter_import_test_file(const char *filename)
+{
+	parameter_serial_entry entries[3] =
+	{
+		(u32)parametertype_uint, (u32)3, (u64)4,
+		(u32)parametertype_double, (u32)4, 1.0,
+		(u32)parametertype_double, (u32)7, 2.5,
+	};
+	
+	u64 count = 3;
+	FILE *file = fopen(filename, "w");
+	fwrite(&count, sizeof(u64), 1, file);
+	fwrite(entries, sizeof(parameter_serial_entry)*count, 1, file);
+	
+	fclose(file);
 }

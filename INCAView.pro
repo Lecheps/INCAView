@@ -43,9 +43,10 @@ LIBS += -L$$PWD/lib/ -lssh\
         #-L$$PWD/../INCA/INCA/libraries/sqlite3/libs/ -lsqlite3\
 
 
-INCLUDEPATH += $$PWD/../INCA/INCA/libraries/sqlite3\
-               $$PWD/../INCA/INCA/libraries/boost/include\
-               $$PWD/include
+INCLUDEPATH += $$PWD/include
+               #$$PWD/../INCA/INCA/libraries/sqlite3\
+               #$$PWD/../INCA/INCA/libraries/boost/include\
+
 DEPENDPATH += $$PWD/../INCA/INCA/libraries/sqlite3
 
 
