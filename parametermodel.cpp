@@ -36,25 +36,25 @@ QVariant ParameterModel::data(const QModelIndex &index, int role) const
     case Qt::EditRole:
     {
         int ID = visibleParamID_[index.row()];
-        Parameter* layout = IDtoParam_.at(ID);
+        Parameter* param = IDtoParam_.at(ID);
         int precision = 10;
         switch(index.column())
         {
             case 0:
             {
-                return layout->name;
+                return param->name;
             } break;
             case 1:
             {
-                return layout->value.getValueDisplayString(precision);
+                return Parameter::getValueDisplayString(param->value, param->type, precision);
             } break;
             case 2:
             {
-                return layout->min.getValueDisplayString(precision);
+                return Parameter::getValueDisplayString(param->min, param->type, precision);
             } break;
             case 3:
             {
-                return layout->max.getValueDisplayString(precision);
+                return Parameter::getValueDisplayString(param->max, param->type, precision);
             } break;
         }
     } break;
@@ -74,8 +74,8 @@ QVariant ParameterModel::data(const QModelIndex &index, int role) const
     {
         int ID = visibleParamID_[index.row()];
         Parameter* param = IDtoParam_.at(ID);
-        if( (param->value.isNotInRange(param->min, param->max)==-1 && index.column()==2) ||
-            (param->value.isNotInRange(param->min, param->max)==1 && index.column()==3) )
+        if( (param->isNotInRange(param->value)==-1 && index.column()==2) ||
+            (param->isNotInRange(param->value)==1 && index.column()==3) )
         {
             QBrush colorbrush;
             colorbrush.setColor(Qt::red);
@@ -122,11 +122,11 @@ bool ParameterModel::setData(const QModelIndex & index, const QVariant & value, 
             int ID = visibleParamID_[index.row()];
             Parameter* param = IDtoParam_.at(ID);
             QString strVal = value.toString();
-            bool valid = param->value.isValidValue(strVal);
+            bool valid = param->isValidValue(strVal);
             if(valid)
             {
-                ParameterValue oldVal = param->value;
-                bool valueWasChanged = param->value.setValue(strVal);
+                parameter_value oldVal = param->value;
+                bool valueWasChanged = param->setValue(strVal);
 
                 if(valueWasChanged)
                 {
@@ -172,13 +172,9 @@ bool ParameterModel::areAllParametersInRange() const
     return result;
 }
 
-void ParameterModel::addParameter(int ID, int parentID, const QString& name, const QString& typeStr, const QVariant &valueVar, const QVariant &minVar, const QVariant &maxVar)
+void ParameterModel::addParameter(const QString& name, int ID, int parentID, const parameter_min_max_val_serial_entry& entry)
 {
-    ParameterValue value(valueVar, typeStr);
-    ParameterValue min(minVar, typeStr);
-    ParameterValue max(maxVar, typeStr);
-    Parameter *param = new Parameter(name, value, min, max);
-    param->parentID = parentID;
+    Parameter *param = new Parameter(name, ID, parentID, entry);
     IDtoParam_[ID] = param;
 }
 
@@ -209,14 +205,12 @@ void ParameterModel::setChildrenVisible(int parentID)
 }
 
 //NOTE! this is only to be used by the MainWindow's undo function
-void ParameterModel::setValue(int ID, ParameterValue& value)
+void ParameterModel::setValue(int ID, parameter_value& value)
 {
     beginResetModel();
     IDtoParam_[ID]->value = value;
     endResetModel();
 }
-
-#include "sqlhandler/parameterserialization.h"
 
 void* ParameterModel::serializeParameterData(size_t *size)
 {
@@ -229,37 +223,9 @@ void* ParameterModel::serializeParameterData(size_t *size)
 
         parameter_serial_entry entry = {};
         entry.ID = ID;
-        switch(param->value.type)
-        {
-            case ParameterValue::DOUBLE:
-            {
-                entry.type = parametertype_double;
-                entry.value.val_double = param->value.value.Double;
-            } break;
+        entry.type = param->type;
+        entry.value = param->value;
 
-            case ParameterValue::BOOL:
-            {
-                entry.type = parametertype_bool;
-                entry.value.val_bool = param->value.value.Bool;
-            } break;
-
-            case ParameterValue::UINT:
-            {
-                entry.type = parametertype_uint;
-                entry.value.val_uint = param->value.value.Uint;
-            } break;
-
-            case ParameterValue::PTIME:
-            {
-                entry.type = parametertype_ptime;
-                entry.value.val_ptime = param->value.value.Time;
-            } break;
-
-            case ParameterValue::UNKNOWN:
-            {
-                qDebug("Tried to serialize unknown parameter type.");
-            } break;
-        }
         outdata.push_back(entry);
     }
 

@@ -6,6 +6,7 @@
 
 enum parameter_type
 {
+    parametertype_notsupported,
     parametertype_double,
     parametertype_uint,
     parametertype_bool,
@@ -31,7 +32,16 @@ struct parameter_serial_entry
     parameter_value value;
 };
 
-struct results_structure_serial_entry
+struct parameter_min_max_val_serial_entry
+{
+    uint32_t type;
+    uint32_t ID;
+    parameter_value min;
+    parameter_value max;
+    parameter_value value;
+};
+
+struct structure_serial_entry
 {
     uint32_t parentID;
     uint32_t childID;

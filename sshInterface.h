@@ -23,6 +23,8 @@ public:
     bool writeFile(const void *contents, size_t contentssize, const char *remotelocation, const char *remotefilename);
     bool readFile(void **buffer, size_t *buffersize, const char *remotefilename);
 
+    bool runSqlHandler(const char *command, const char *db, const char *tempfile);
+
 private:
     ssh_session session_;
 };

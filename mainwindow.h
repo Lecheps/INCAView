@@ -19,7 +19,7 @@ namespace Ui {
 class MainWindow;
 }
 
-class MainWindow : public QMainWindow, virtual protected sqlInterface
+class MainWindow : public QMainWindow
 {
     Q_OBJECT
 
@@ -30,7 +30,7 @@ public:
 private slots:
 
     void on_pushConnect_clicked();
-    void on_pushLoad_clicked();
+    //void on_pushLoad_clicked();
     //void on_pushSave_clicked();
     //void on_pushSaveAs_clicked();
     void on_pushRun_clicked();
@@ -66,8 +66,7 @@ private:
     ParameterModel *parameterModel_;
     LineEditDelegate *lineEditDelegate;
 
-    const QString tempWorkingDBPath = "__temp.db";
-    QString loadedDBPath_;
+    char *serverAddress_, *remoteUsername_, *remoteDBpath_;
 
     bool stuffHasBeenEditedSinceLastSave = false;
 

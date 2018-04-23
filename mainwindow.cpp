@@ -10,6 +10,10 @@ MainWindow::MainWindow(QWidget *parent) :
 {
     ui->setupUi(this);
 
+    remoteUsername_ = "";
+    serverAddress_ = "";
+    remoteDBpath_ = "";
+
     //ui->pushSave->setEnabled(false);
     //ui->pushSaveAs->setEnabled(false);
     ui->pushRun->setEnabled(false);
@@ -69,14 +73,15 @@ MainWindow::~MainWindow()
 
 void MainWindow::resetWindowTitle()
 {
-    if(pathToDBIsSet() && stuffHasBeenEditedSinceLastSave)
+    QString titlepath = QString("%1@%2/%3").arg(remoteUsername_).arg(serverAddress_).arg(remoteDBpath_);
+    if(ssh.isSessionConnected() && stuffHasBeenEditedSinceLastSave)
     {
-        setWindowTitle("*" + loadedDBPath_ + " - INCA View");
+        setWindowTitle("*" + titlepath + " - INCA View");
         return;
     }
-    else if(pathToDBIsSet())
+    else if(ssh.isSessionConnected())
     {
-        setWindowTitle(loadedDBPath_ + " - INCA View");
+        setWindowTitle(titlepath + " - INCA View");
         return;
     }
     setWindowTitle("INCA View");
@@ -87,10 +92,58 @@ void MainWindow::on_pushConnect_clicked()
     if(!ssh.isSessionConnected())
     {
         ui->pushConnect->setEnabled(false);
-        bool success = ssh.connectSession("magnus", "35.197.231.4", "C:\\testkeys\\testkey");
+
+        //TODO: Query the user about these
+        serverAddress_ = "35.197.231.4";
+        remoteUsername_ = "magnus";
+        remoteDBpath_ = "test.db";
+        const char *keypath = "C:\\testkeys\\testkey";
+        bool success = ssh.connectSession(remoteUsername_, serverAddress_, keypath);
+
         if(success)
         {
             ui->pushRun->setEnabled(true);
+
+            editUndoStack_.clear();
+
+            //ui->pushConnect->setEnabled(true);
+            //ui->pushSaveAs->setEnabled(true);
+            //ui->pushRun->setEnabled(true);
+
+            ui->radioButtonDaily->setEnabled(true);
+            ui->radioButtonMonthlyAverages->setEnabled(true);
+            ui->radioButtonYearlyAverages->setEnabled(true);
+
+            //loadedDBPath_ = pathToDB;
+
+            //copyAndOverwriteFile(loadedDBPath_, tempWorkingDBPath);
+            //setDBPath(tempWorkingDBPath);
+
+            resetWindowTitle();
+
+            parameterModel_ = new ParameterModel();
+            treeParameters_ = new TreeModel("Parameter Structure");
+            treeResults_ = new TreeModel("Results Structure");
+            populateParameterModels(treeParameters_, parameterModel_);
+            populateTreeModelResults(treeResults_);
+
+            ui->tableViewParameters->setModel(parameterModel_);
+            ui->treeViewParameters->setModel(treeParameters_);
+            ui->treeViewParameters->expandToDepth(3);
+            ui->treeViewParameters->setColumnHidden(1, true);
+            ui->treeViewParameters->resizeColumnToContents(0);
+            ui->treeViewResults->setModel(treeResults_);
+            ui->treeViewResults->expandToDepth(1);
+            ui->treeViewResults->resizeColumnToContents(0);
+            ui->treeViewResults->setColumnHidden(1, true);
+            ui->treeViewResults->setSelectionMode(QTreeView::ExtendedSelection); // Allows to ctrl-select multiple items.
+
+            QObject::connect(parameterModel_, &ParameterModel::parameterWasEdited, this, &MainWindow::parameterWasEdited);
+            QObject::connect(ui->treeViewParameters->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateParameterView);
+            QObject::connect(ui->treeViewResults->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateGraphsAndResultSummary);
+
+            //NOTE: this is to mark that the x axis is uninitialized so that it can be initialized later. TODO: is there a better way to do it?
+            ui->widgetPlotResults->xAxis->setRange(0.0, 0.1);
 
             //updateGraphsAndResultSummary();
         }
@@ -102,6 +155,7 @@ void MainWindow::on_pushConnect_clicked()
     }
 }
 
+/*
 void MainWindow::on_pushLoad_clicked()
 {
     QString pathToDB = QFileDialog::getOpenFileName(this,tr("Select output database"),"c:/Users/Magnus/Documents/INCAView/test.db",tr("Database files (*.db)"));
@@ -141,7 +195,7 @@ void MainWindow::on_pushLoad_clicked()
                 stuffHasBeenEditedSinceLastSave = false;
                 editUndoStack_.clear();
 
-                ui->pushConnect->setEnabled(true);
+                //ui->pushConnect->setEnabled(true);
                 //ui->pushSaveAs->setEnabled(true);
                 //ui->pushRun->setEnabled(true);
 
@@ -150,10 +204,10 @@ void MainWindow::on_pushLoad_clicked()
                 ui->radioButtonYearlyAverages->setEnabled(true);
 
 
-                loadedDBPath_ = pathToDB;
+                //loadedDBPath_ = pathToDB;
 
-                copyAndOverwriteFile(loadedDBPath_, tempWorkingDBPath);
-                setDBPath(tempWorkingDBPath);
+                //copyAndOverwriteFile(loadedDBPath_, tempWorkingDBPath);
+                //setDBPath(tempWorkingDBPath);
 
                 resetWindowTitle();
 
@@ -190,6 +244,7 @@ void MainWindow::on_pushLoad_clicked()
         }
     }
 }
+*/
 
 /*
 void MainWindow::on_pushSave_clicked()
@@ -342,11 +397,11 @@ void MainWindow::runINCA()
 
 
     //Upload the parameter data to the cloud.
-    ssh.writeFile(parameterdata, size, "~/", "parameter.dat");
+    ssh.writeFile(parameterdata, size, "~/", "data.dat");
     free(parameterdata);
 
     //Run the remote tool to put the data from the parameter file into the remote database.
-    ssh.runCommand("./testdirectory/sqlhandler import_parameter_values test.db parameter.dat");
+    ssh.runSqlHandler("import_parameter_values", remoteDBpath_, "data.dat");
 
     //TODO: actually run INCA
 
@@ -397,6 +452,7 @@ void MainWindow::updateGraphsAndResultSummary()
 
         if(IDs.count() && ssh.isSessionConnected())
         {
+            //TODO make a utility function for this that uses the dynamically set db name!!
             QString command = "./testdirectory/sqlhandler export_result_values test.db data.dat";
             for(int ID : IDs)
             {
@@ -635,6 +691,59 @@ void MainWindow::updateGraphToolTip(QMouseEvent *event)
 
 void MainWindow::populateParameterModels(TreeModel* treemodel, ParameterModel *parametermodel)
 {
+    if(ssh.isSessionConnected())
+    {
+        ssh.runSqlHandler("export_parameter_values_min_max", remoteDBpath_, "data.dat");
+        void *filedata = 0;
+        size_t filesize;
+        ssh.readFile(&filedata, &filesize, "~/data.dat");
+
+        std::map<uint32_t, parameter_min_max_val_serial_entry> IDtoParam;
+
+        uint8_t *at = (uint8_t *)filedata;
+        while(at < (uint8_t *)filedata + filesize)
+        {
+            parameter_min_max_val_serial_entry *entry = (parameter_min_max_val_serial_entry *)at;
+            IDtoParam[entry->ID] = *entry;
+            at += sizeof(parameter_min_max_val_serial_entry);
+        }
+
+        free(filedata);
+        filedata = 0;
+        filesize = 0;
+
+        ssh.runSqlHandler("export_parameter_structure", remoteDBpath_, "data.dat");
+        ssh.readFile(&filedata, &filesize, "~/data.dat");
+        at = (uint8_t *)filedata;
+        while(at < (uint8_t *)filedata + filesize)
+        {
+            structure_serial_entry *entry = (structure_serial_entry *)at;
+            at += sizeof(structure_serial_entry);
+
+            int parentID = (int)entry->parentID;
+            int childID = (int)entry->childID;
+            std::string namestr((char *)at, (char *)at + entry->childNameLen); //Is there a better way to get a QString from a range based char * (not nullterminated)?
+            at += entry->childNameLen;
+
+            auto parref = IDtoParam.find(entry->childID);
+            if(parref == IDtoParam.end())
+            {
+                //This ID corresponds to something that does not have a value, and so we add it to the tree structure.
+
+                treemodel->addItem(QString::fromStdString(namestr), childID, parentID);
+            }
+            else
+            {
+                //This ID corresponds to something that has a value, and so we add it to the parameter model.
+                parameter_min_max_val_serial_entry& par = parref->second;
+                parametermodel->addParameter(
+                            QString::fromStdString(namestr),
+                            childID, // ID
+                            parentID,
+                            par);
+        }
+    }
+    /*
     connectDB();
     {
         QSqlQuery query;
@@ -710,6 +819,8 @@ void MainWindow::populateParameterModels(TreeModel* treemodel, ParameterModel *p
 
     }
     disconnectDB();
+    */
+    }
 }
 
 void MainWindow::populateTreeModelResults(TreeModel* model)
@@ -739,16 +850,16 @@ void MainWindow::populateTreeModelResults(TreeModel* model)
     */
     if(ssh.isSessionConnected())
     {
-        ssh.runCommand("./testdirectory/sqlhandler export_results_structure test.db resultsstructure.dat");
+        ssh.runSqlHandler("export_results_structure", remoteDBpath_, "data.dat");
 
         void *filedata = 0;
         size_t filesize;
-        ssh.readFile(&filedata, &filesize, "~/resultsstructure.dat");
+        ssh.readFile(&filedata, &filesize, "~/data.dat");
         uint8_t *at = (uint8_t *)filedata;
-        while(at != filedata + filesize)
+        while(at < (uint8_t *)filedata + filesize)
         {
-            results_structure_serial_entry *entry = (results_structure_serial_entry *)at;
-            at += sizeof(results_structure_serial_entry);
+            structure_serial_entry *entry = (structure_serial_entry *)at;
+            at += sizeof(structure_serial_entry);
 
             int parentID = (int)entry->parentID;
             int childID = (int)entry->childID;
@@ -758,6 +869,7 @@ void MainWindow::populateTreeModelResults(TreeModel* model)
 
             at += entry->childNameLen;
         }
+        free(filedata);
     }
 }
 
@@ -779,8 +891,6 @@ void MainWindow::parameterWasEdited(ParameterEditAction param)
      */
 
     editUndoStack_.push_back(param);
-
-
 
     toggleStuffHasBeenEditedSinceLastSave(true);
 }

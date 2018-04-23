@@ -246,3 +246,18 @@ bool SSHInterface::readFile(void **buffer, size_t* buffersize, const char *remot
     return success;
 }
 
+
+bool SSHInterface::runSqlHandler(const char *command, const char *db, const char *tempfile)
+{
+    if(isSessionConnected())
+    {
+        char buf[512];
+        sprintf(buf, "./testdirectory/sqlhandler %s %s %s", command, db, tempfile);
+        runCommand(buf);
+    }
+    else
+    {
+        qDebug("Tried to call the sqlhandler over ssh when ssh was not connected.");
+    }
+}
+
