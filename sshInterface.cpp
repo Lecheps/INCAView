@@ -249,15 +249,155 @@ bool SSHInterface::readFile(void **buffer, size_t* buffersize, const char *remot
 
 bool SSHInterface::runSqlHandler(const char *command, const char *db, const char *tempfile)
 {
+    char buf[512];
+    sprintf(buf, "./testdirectory/sqlhandler %s %s %s", command, db, tempfile);
+    runCommand(buf);
+
+}
+
+
+void SSHInterface::getStructureData(const char *remoteDB, const char *command, QVector<TreeData> &outdata)
+{
     if(isSessionConnected())
     {
-        char buf[512];
-        sprintf(buf, "./testdirectory/sqlhandler %s %s %s", command, db, tempfile);
-        runCommand(buf);
+        runSqlHandler(command, remoteDB, "data.dat");
+
+        void *filedata = 0;
+        size_t filesize;
+        readFile(&filedata, &filesize, "~/data.dat");
+        uint8_t *at = (uint8_t *)filedata;
+        while(at < (uint8_t *)filedata + filesize)
+        {
+            structure_serial_entry *entry = (structure_serial_entry *)at;
+            at += sizeof(structure_serial_entry);
+
+            int parentID = (int)entry->parentID;
+            int childID = (int)entry->childID;
+
+            std::string str((char *)at, (char *)at + entry->childNameLen); //Is there a better way to get a QString from a range based char * (not nullterminated)?
+
+            outdata.push_back({QString::fromStdString(str), childID, parentID});
+
+            at += entry->childNameLen;
+        }
+        if(filedata) free(filedata);
+
     }
     else
     {
-        qDebug("Tried to call the sqlhandler over ssh when ssh was not connected.");
+        qDebug("Attempted to do ssh request when the session was not connected.");
     }
+}
+
+void SSHInterface::getResultsStructure(const char *remoteDB, QVector<TreeData> &structuredata)
+{
+    getStructureData(remoteDB, EXPORT_RESULTS_STRUCTURE_COMMAND, structuredata);
+}
+
+
+void SSHInterface::getParameterStructure(const char *remoteDB, QVector<TreeData> &structuredata)
+{
+    getStructureData(remoteDB, EXPORT_PARAMETER_STRUCTURE_COMMAND, structuredata);
+}
+
+
+void SSHInterface::getParameterValuesMinMax(const char *remoteDB, std::map<uint32_t, parameter_min_max_val_serial_entry>& IDtoParam)
+{
+    if(isSessionConnected())
+    {
+        runSqlHandler(EXPORT_PARAMETER_VALUES_MIN_MAX_COMMAND, remoteDB, "data.dat");
+
+        void *filedata = 0;
+        size_t filesize;
+        readFile(&filedata, &filesize, "~/data.dat");
+
+        uint8_t *at = (uint8_t *)filedata;
+        while(at < (uint8_t *)filedata + filesize)
+        {
+            parameter_min_max_val_serial_entry *entry = (parameter_min_max_val_serial_entry *)at;
+            IDtoParam[entry->ID] = *entry;
+            at += sizeof(parameter_min_max_val_serial_entry);
+        }
+
+        if(filedata) free(filedata);
+    }
+    else
+    {
+        qDebug("Attempted to do ssh request when the session was not connected.");
+    }
+}
+
+
+void SSHInterface::getResultSets(const QVector<int>& IDs, QVector<QVector<double>> &valuedata)
+{
+    if(isSessionConnected())
+    {
+        //TODO: do this more cleanly
+        QString command = "./testdirectory/sqlhandler export_result_values test.db data.dat";
+        for(int ID : IDs)
+        {
+            command += " " + QString::number(ID);
+        }
+        runCommand(command.toLatin1().data());
+
+        void *filedata;
+        size_t filesize;
+        readFile(&filedata, &filesize, "~/data.dat");
+
+        uint8_t *data = (uint8_t *)filedata;
+        uint64_t numresults = *(uint64_t *)data;
+        data += sizeof(uint64_t);
+
+        //TODO: Better error handling
+        Q_ASSERT(numresults == IDs.count());
+        Q_ASSERT(sizeof(double)==8); //If this is not the case, someone has to write reformatting code for the data.
+
+        valuedata.resize((int)numresults);
+
+        //qDebug(QString::number((int)numresults).toLatin1().data());
+
+        for(int i = 0; i < numresults; ++i)
+        {
+            //TODO: Check that we never overstep the filesize;
+            uint64_t count = *(uint64_t *)data;
+            data += sizeof(uint64_t);
+            int cnt = (int)count;
+
+            //qDebug(QString::number(cnt).toLatin1().data());
+
+            QVector<double>& current = valuedata[i];
+            current.resize(cnt);
+
+            double *data_d = (double *)data;
+            for(int j = 0; j < cnt; ++j)
+            {
+                current[j] = *data_d++;
+            }
+        }
+
+        if(filedata) free(filedata);
+    }
+    else
+    {
+         qDebug("Attempted to do ssh request when the session was not connected.");
+    }
+}
+
+
+void SSHInterface::writeParameterValues(const char *remoteDB, QVector<parameter_serial_entry>& writedata)
+{
+    uint64_t count = writedata.count();
+    size_t size = sizeof(uint64_t) + count*sizeof(parameter_serial_entry);
+    void *result = malloc(size);
+
+    uint8_t *at = (uint8_t *)result;
+    *(uint64_t *)at = count;
+    at += sizeof(uint64_t);
+    memcpy(at, writedata.data(), count*sizeof(parameter_serial_entry));
+
+    writeFile(result, size, "~/", "data.dat");
+    free(result);
+
+    runSqlHandler(IMPORT_PARAMETER_VALUES_COMMAND, remoteDB, "data.dat");
 }
 

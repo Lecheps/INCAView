@@ -69,13 +69,13 @@ TreeModel::TreeModel(const QString& colName, QObject *parent)
     IDtoTreeItem_[0] = rootItem;
 }
 
-void TreeModel::addItem(const QString &name, int ID, int parentID)
+void TreeModel::addItem(const TreeData& data)
 {
     QList<QVariant> itemData;
-    itemData << name << ID;
-    TreeItem* parent = IDtoTreeItem_[parentID];
+    itemData << data.name << data.ID;
+    TreeItem* parent = IDtoTreeItem_[data.parentID];
     TreeItem* item = new TreeItem(itemData, parent);
-    IDtoTreeItem_[ID] = item;
+    IDtoTreeItem_[data.ID] = item;
     parent->appendChild(item);
 }
 

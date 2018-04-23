@@ -30,7 +30,7 @@ public:
     void clearVisibleParameters();
     void setChildrenVisible(int);
 
-    void *serializeParameterData(size_t *size);
+    void serializeParameterData(QVector<parameter_serial_entry> &outdata);
 
     void setValue(int, parameter_value&); //NOTE: this is only to be used by the MainWindow's undo function
 private:

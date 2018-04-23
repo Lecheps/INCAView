@@ -60,6 +60,13 @@
 
 class TreeItem;
 
+struct TreeData
+{
+    QString name;
+    int ID;
+    int parentID;
+};
+
 //! [0]
 class TreeModel : public QAbstractItemModel
 {
@@ -79,7 +86,7 @@ public:
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     int columnCount(const QModelIndex &parent = QModelIndex()) const override;
 
-    void addItem(const QString &name, int ID, int parentID);
+    void addItem(const TreeData&);
 
     QString getName(int);
     QString getParentName(int);

@@ -212,10 +212,8 @@ void ParameterModel::setValue(int ID, parameter_value& value)
     endResetModel();
 }
 
-void* ParameterModel::serializeParameterData(size_t *size)
+void ParameterModel::serializeParameterData(QVector<parameter_serial_entry>& outdata)
 {
-
-    QVector<parameter_serial_entry> outdata;
     for(auto par_pair : IDtoParam_)
     {
         uint32_t ID = par_pair.first;
@@ -229,14 +227,5 @@ void* ParameterModel::serializeParameterData(size_t *size)
         outdata.push_back(entry);
     }
 
-    uint64_t count = outdata.count();
-    *size = sizeof(uint64_t) + count*sizeof(parameter_serial_entry);
-    void *result = malloc(*size);
-
-    uint8_t *data = (uint8_t *)result;
-    *(uint64_t *)data = count;
-    data += sizeof(uint64_t);
-    memcpy(data, outdata.data(), count*sizeof(parameter_serial_entry));
-
-    return result;
+    return;
 }

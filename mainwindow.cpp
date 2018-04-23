@@ -391,21 +391,11 @@ void MainWindow::closeEvent (QCloseEvent *event)
 
 void MainWindow::runINCA()
 {
-    //Serialize parameters
-    size_t size;
-    void *parameterdata = parameterModel_->serializeParameterData(&size);
-
-
-    //Upload the parameter data to the cloud.
-    ssh.writeFile(parameterdata, size, "~/", "data.dat");
-    free(parameterdata);
-
-    //Run the remote tool to put the data from the parameter file into the remote database.
-    ssh.runSqlHandler("import_parameter_values", remoteDBpath_, "data.dat");
-
+    //Serialize parameters and send them to the remote database
+    QVector<parameter_serial_entry> parameterdata;
+    parameterModel_->serializeParameterData(parameterdata);
+    ssh.writeParameterValues(remoteDBpath_, parameterdata);
     //TODO: actually run INCA
-
-
 
     updateGraphsAndResultSummary();
 }
@@ -434,7 +424,6 @@ void MainWindow::updateGraphsAndResultSummary()
         ui->textResultsInfo->clear();
 
         QModelIndexList indexes = ui->treeViewResults->selectionModel()->selectedIndexes();
-        int firstunassignedcolor = 0;
 
         QVector<int> IDs;
         for(auto index : indexes)
@@ -447,36 +436,22 @@ void MainWindow::updateGraphsAndResultSummary()
             }
         }
 
-        void *filedata = 0;
-        size_t filesize;
-
+        int firstunassignedcolor = 0;
         if(IDs.count() && ssh.isSessionConnected())
         {
-            //TODO make a utility function for this that uses the dynamically set db name!!
-            QString command = "./testdirectory/sqlhandler export_result_values test.db data.dat";
-            for(int ID : IDs)
+            QVector<QVector<double>> resultsets;
+            ssh.getResultSets(IDs, resultsets);
+            Q_ASSERT(resultsets.count() == IDs.count());
+
+            for(int i = 0; i < IDs.count(); ++i)
             {
-                command += " " + QString::number(ID);
-            }
+                int ID = IDs[i];
+                QVector<double>& yval = resultsets[i];
+                int cnt = yval.count();
+                QVector<double> xval(cnt);
 
-            qDebug(command.toLatin1().data());
+                //qDebug(QString::number(cnt).toLatin1().data());
 
-            ssh.runCommand(command.toLatin1().data());
-
-            ssh.readFile(&filedata, &filesize, "~/data.dat");
-
-
-            uint8_t *data = (uint8_t *)filedata;
-            uint64_t numresults = *(uint64_t *)data;
-
-            qDebug(QString::number(filesize).toLatin1().data());
-            qDebug(QString::number(numresults).toLatin1().data());
-            qDebug(QString::number(IDs.count()).toLatin1().data());
-
-            data += sizeof(uint64_t);
-
-            for(int ID : IDs)
-            {
                 //TODO: Currently times are just for debugging!!! Should read actual times from a different source.
                 auto startdate = QDateTime::currentDateTime();
                 startdate = QDateTime(startdate.date()); //Remove hours, minutes, seconds
@@ -484,27 +459,14 @@ void MainWindow::updateGraphsAndResultSummary()
                 double min = std::numeric_limits<double>::max();
                 double max = std::numeric_limits<double>::min();
 
-                uint64_t count = *(uint64_t *)data;
-                data += sizeof(uint64_t);
-                int cnt = (int)count;
-                qDebug(QString::number(count).toLatin1().data());
-                qDebug(QString::number(cnt).toLatin1().data());
-
-                Q_ASSERT(sizeof(double)==8); //If this is not the case, someone has to write reformatting code for the data.
-                QVector<double> xval(cnt);
-                QVector<double> yval(cnt);
-
-                double *data_double = (double *)data;
-                for(int i = 0; i < cnt; ++i)
+                for(int j = 0; j < cnt; ++j)
                 {
-                    double value = *data_double;
-                    xval[i] = (double)(starttime + 24*3600*i);
-                    yval[i] = value;
+                    double value = yval[j];
+                    //qDebug(QString::number(value).toLatin1().data());
+                    xval[j] = (double)(starttime + 24*3600*j);
                     min = value < min ? value : min;
                     max = value > max ? value : max;
-                    ++data_double;
                 }
-                data += cnt*sizeof(double);
 
                 if(cnt != 0)
                 {
@@ -547,9 +509,9 @@ void MainWindow::updateGraphsAndResultSummary()
                         int prevyear = date.date().year();
                         double sum = 0;
                         int dayscnt = 0;
-                        for(int i = 0; i < cnt; ++i)
+                        for(int j = 0; j < cnt; ++j)
                         {
-                            sum += yval[i];
+                            sum += yval[j];
                             dayscnt++;
                             int curyear = date.date().year();
                             if(curyear != prevyear)
@@ -583,9 +545,9 @@ void MainWindow::updateGraphsAndResultSummary()
                         int prevyear = date.date().year();
                         double sum = 0;
                         int dayscnt = 0;
-                        for(int i = 0; i < cnt; ++i)
+                        for(int j = 0; j < cnt; ++j)
                         {
-                            sum += yval[i];
+                            sum += yval[j];
                             dayscnt++;
                             int curmonth = date.date().month();
                             if(curmonth != prevmonth)
@@ -633,7 +595,6 @@ void MainWindow::updateGraphsAndResultSummary()
                 }
             }
         }
-        if(filedata) free(filedata);
 
         ui->widgetPlotResults->replot();
         updateGraphToolTip(0); // Clear the graph tooltip.
@@ -693,183 +654,37 @@ void MainWindow::populateParameterModels(TreeModel* treemodel, ParameterModel *p
 {
     if(ssh.isSessionConnected())
     {
-        ssh.runSqlHandler("export_parameter_values_min_max", remoteDBpath_, "data.dat");
-        void *filedata = 0;
-        size_t filesize;
-        ssh.readFile(&filedata, &filesize, "~/data.dat");
 
         std::map<uint32_t, parameter_min_max_val_serial_entry> IDtoParam;
+        ssh.getParameterValuesMinMax(remoteDBpath_, IDtoParam);
 
-        uint8_t *at = (uint8_t *)filedata;
-        while(at < (uint8_t *)filedata + filesize)
+        QVector<TreeData> structuredata;
+        ssh.getParameterStructure(remoteDBpath_, structuredata);
+        for(TreeData& item : structuredata)
         {
-            parameter_min_max_val_serial_entry *entry = (parameter_min_max_val_serial_entry *)at;
-            IDtoParam[entry->ID] = *entry;
-            at += sizeof(parameter_min_max_val_serial_entry);
-        }
-
-        free(filedata);
-        filedata = 0;
-        filesize = 0;
-
-        ssh.runSqlHandler("export_parameter_structure", remoteDBpath_, "data.dat");
-        ssh.readFile(&filedata, &filesize, "~/data.dat");
-        at = (uint8_t *)filedata;
-        while(at < (uint8_t *)filedata + filesize)
-        {
-            structure_serial_entry *entry = (structure_serial_entry *)at;
-            at += sizeof(structure_serial_entry);
-
-            int parentID = (int)entry->parentID;
-            int childID = (int)entry->childID;
-            std::string namestr((char *)at, (char *)at + entry->childNameLen); //Is there a better way to get a QString from a range based char * (not nullterminated)?
-            at += entry->childNameLen;
-
-            auto parref = IDtoParam.find(entry->childID);
+            auto parref = IDtoParam.find(item.ID);
             if(parref == IDtoParam.end())
             {
                 //This ID corresponds to something that does not have a value, and so we add it to the tree structure.
-
-                treemodel->addItem(QString::fromStdString(namestr), childID, parentID);
+                treemodel->addItem(item);
             }
             else
             {
                 //This ID corresponds to something that has a value, and so we add it to the parameter model.
                 parameter_min_max_val_serial_entry& par = parref->second;
-                parametermodel->addParameter(
-                            QString::fromStdString(namestr),
-                            childID, // ID
-                            parentID,
-                            par);
-        }
-    }
-    /*
-    connectDB();
-    {
-        QSqlQuery query;
-        query.prepare(QString("SELECT parent.ID as parentID, child.ID, child.Name, child.type "
-                              "FROM ParameterStructure as parent, ParameterStructure as child "
-                              "WHERE child.lft > parent.lft "
-                              "AND child.rgt < parent.rgt "
-                              "AND child.dpt = parent.dpt + 1 "
-                              "UNION "
-                              "SELECT 0 as parentID, child.ID, child.Name, child.type " //NOTE: This 0 has to be the same ID as assigned to the tree root node in the TreeModel constructor. This will not work if any of the items in the database have ID=0
-                              "FROM ParameterStructure as child "
-                              "WHERE child.dpt = 0;")
-                              );
-        query.exec();
-
-        while(query.next())
-        {
-            int parentID = query.value(0).toInt();
-            int childID = query.value(1).toInt();
-            QString childName = query.value(2).toString();
-            bool childIsValue = !query.value(3).isNull();
-            if(!childIsValue)
-            {
-                treemodel->addItem(childName, childID, parentID);
+                parametermodel->addParameter(item.name, item.ID, item.parentID, par);
             }
         }
-    }
-    disconnectDB();
-
-    connectDB();
-    {
-        QSqlQuery query;
-        query.prepare(   "SELECT "
-                            "ParameterStructure.name,ParameterStructure.type,ParameterValues.* "
-                        "FROM "
-                        "    ParameterStructure INNER JOIN ParameterValues "
-                        "    ON ParameterStructure.ID = ParameterValues.ID; "
-                    );
-        query.exec();
-        while (query.next())
-        {
-            int ID = query.value(2).toInt();
-
-            QSqlQuery query2;
-            query2.prepare(" SELECT parent.ID FROM ParameterStructure AS parent, ParameterStructure AS child "
-                           "WHERE child.lft > parent.lft "
-                           "AND child.rgt < parent.rgt "
-                           "AND child.dpt = parent.dpt + 1 "
-                           "AND child.ID = :ID;");
-            query2.bindValue(":ID", ID);
-            query2.exec();
-            int parentID = 0;
-            if(query2.next())
-            {
-                parentID = query2.value(0).toInt();
-                //qDebug(QString::number(parentID).toLatin1().data());
-            }
-            else
-            {
-                qDebug("did not detect parent of parameter");
-            }
-
-            parametermodel->addParameter(
-                        ID, // ID
-                        parentID,
-                        query.value(0).toString(), // name
-                        query.value(1).toString(), // type
-                        query.value(5), // value
-                        query.value(3), // min
-                        query.value(4) // max
-                        );
-        }
-
-    }
-    disconnectDB();
-    */
     }
 }
 
 void MainWindow::populateTreeModelResults(TreeModel* model)
 {
-    /*
-    connectDB();
-    QSqlQueryModel query;
-    query.setQuery(QString("SELECT parent.ID as parentID, child.ID, child.Name "
-                          "FROM ResultsStructure as parent, ResultsStructure as child "
-                          "WHERE child.lft > parent.lft "
-                          "AND child.rgt < parent.rgt "
-                          "AND child.dpt = parent.dpt + 1 "
-                          "UNION "
-                          "SELECT 0 as parentID, child.ID, child.Name " //NOTE: This 0 has to be the same ID as assigned to the tree root node in the TreeModel constructor. This will not work if any of the items in the database have ID=0
-                          "FROM ResultsStructure as child "
-                          "WHERE child.dpt = 0;")
-                          );
-
-    for (int i = 0; i < query.rowCount(); ++i)
+    QVector<TreeData> resultstreedata;
+    ssh.getResultsStructure(remoteDBpath_, resultstreedata);
+    for(TreeData& item : resultstreedata)
     {
-        int parentID = query.data(query.index(i, 0)).toInt();
-        int childID = query.data(query.index(i, 1)).toInt();
-        QString childName = query.data(query.index(i, 2)).toString();
-        model->addItem(childName, childID, parentID);
-    }
-    disconnectDB();
-    */
-    if(ssh.isSessionConnected())
-    {
-        ssh.runSqlHandler("export_results_structure", remoteDBpath_, "data.dat");
-
-        void *filedata = 0;
-        size_t filesize;
-        ssh.readFile(&filedata, &filesize, "~/data.dat");
-        uint8_t *at = (uint8_t *)filedata;
-        while(at < (uint8_t *)filedata + filesize)
-        {
-            structure_serial_entry *entry = (structure_serial_entry *)at;
-            at += sizeof(structure_serial_entry);
-
-            int parentID = (int)entry->parentID;
-            int childID = (int)entry->childID;
-
-            std::string str((char *)at, (char *)at + entry->childNameLen); //Is there a better way to get a QString from a range based char * (not nullterminated)?
-            model->addItem(QString::fromStdString(str), childID, parentID);
-
-            at += entry->childNameLen;
-        }
-        free(filedata);
+        model->addItem(item);
     }
 }
 

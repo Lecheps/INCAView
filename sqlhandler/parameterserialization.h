@@ -50,4 +50,11 @@ struct structure_serial_entry
 
 #pragma pack(pop)
 
+
+#define EXPORT_RESULTS_STRUCTURE_COMMAND "export_results_structure"
+#define EXPORT_PARAMETER_STRUCTURE_COMMAND "export_parameter_structure"
+#define EXPORT_RESULT_VALUES_COMMAND "export_result_values"
+#define EXPORT_PARAMETER_VALUES_MIN_MAX_COMMAND "export_parameter_values_min_max"
+#define IMPORT_PARAMETER_VALUES_COMMAND "import_parameter_values"
+
 #endif // PARAMETERSERIALIZATION_H

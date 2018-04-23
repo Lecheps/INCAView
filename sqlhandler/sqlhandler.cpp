@@ -119,7 +119,7 @@ static int export_structure_callback(void *data, int argc, char **argv, char **c
 	char *childName = argv[2];
 	outdata.childNameLen = strlen(childName);
 	
-	fprintf(stdout, "%u %u %u %s\n", outdata.parentID, outdata.childID, outdata.childNameLen, childName);
+	//fprintf(stdout, "%u %u %u %s\n", outdata.parentID, outdata.childID, outdata.childNameLen, childName);
 	
 	fwrite(&outdata, sizeof(outdata), 1, file);
 	fwrite(childName, outdata.childNameLen, 1, file);
@@ -351,15 +351,14 @@ int main(int argc, char *argv[])
 		else
 		{
 			fprintf(stdout, "Succeeded in opening database!\n");
-			if(strcmp(argv[1], "export_result_values") == 0)
+			if(strcmp(argv[1], EXPORT_RESULT_VALUES_COMMAND) == 0)
 			{
 				u32 numrequests = argc - 4;
 				if(numrequests > 0)
 				{
 					u32 *requested_ids = (u32 *)malloc(numrequests*sizeof(u32));
 					for(u32 i = 0; i < numrequests; ++i)
-					{
-						
+					{	
 						u32 ID = (u32)atoi(argv[4+i]);
 						//TODO: check if format was correct
 						requested_ids[i] = ID;
@@ -371,24 +370,24 @@ int main(int argc, char *argv[])
 					//test_result_values_file(filename);
 				}
 			}
-			else if(strcmp(argv[1], "import_parameter_values") == 0)
+			else if(strcmp(argv[1], IMPORT_PARAMETER_VALUES_COMMAND) == 0)
 			{
 				//write_parameter_import_test_file((filename);
 				
 				import_parameter_values(db, filename);
 			}
-			else if(strcmp(argv[1], "export_results_structure") == 0)
+			else if(strcmp(argv[1], EXPORT_RESULTS_STRUCTURE_COMMAND) == 0)
 			{
 				export_results_structure(db, filename);
 				
 				//test_structure_file(filename);
 			}
-			else if(strcmp(argv[1], "export_parameter_structure") == 0)
+			else if(strcmp(argv[1], EXPORT_PARAMETER_STRUCTURE_COMMAND) == 0)
 			{
 				export_parameter_structure(db, filename);
 				//test_structure_file(filename);
 			}
-			else if(strcmp(argv[1], "export_parameter_values_min_max") == 0)
+			else if(strcmp(argv[1], EXPORT_PARAMETER_VALUES_MIN_MAX_COMMAND) == 0)
 			{
 				export_parameter_values_min_max(db, filename);
 			}
