@@ -112,7 +112,37 @@
             </widget>
            </item>
            <item>
-            <widget class="QTextBrowser" name="textResultsInfo"/>
+            <widget class="QTabWidget" name="tabWidget">
+             <property name="minimumSize">
+              <size>
+               <width>300</width>
+               <height>0</height>
+              </size>
+             </property>
+             <property name="currentIndex">
+              <number>1</number>
+             </property>
+             <widget class="QWidget" name="tabResultsInfo">
+              <attribute name="title">
+               <string>Results Info</string>
+              </attribute>
+              <layout class="QHBoxLayout" name="horizontalLayout">
+               <item>
+                <widget class="QTextBrowser" name="textResultsInfo"/>
+               </item>
+              </layout>
+             </widget>
+             <widget class="QWidget" name="tabLog">
+              <attribute name="title">
+               <string>Log</string>
+              </attribute>
+              <layout class="QHBoxLayout" name="horizontalLayout_2">
+               <item>
+                <widget class="QTextBrowser" name="textLog"/>
+               </item>
+              </layout>
+             </widget>
+            </widget>
            </item>
           </layout>
          </widget>

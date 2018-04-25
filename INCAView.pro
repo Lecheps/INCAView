@@ -15,7 +15,6 @@ TEMPLATE = app
 
 SOURCES += main.cpp\
         mainwindow.cpp \
-    sqlInterface.cpp \
     treeitem.cpp \
     treemodel.cpp \
     qcustomplot.cpp \
@@ -25,7 +24,6 @@ SOURCES += main.cpp\
     sshInterface.cpp
 
 HEADERS  += mainwindow.h \
-    sqlInterface.h \
     treemodel.h \
     treeitem.h \
     qcustomplot.h \

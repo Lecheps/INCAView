@@ -54,8 +54,6 @@
 #include <QAbstractItemModel>
 #include <QModelIndex>
 #include <QVariant>
-#include <QSqlQueryModel>
-#include <sqlInterface.h>
 #include "unordered_map"
 
 class TreeItem;

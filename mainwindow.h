@@ -43,6 +43,9 @@ private slots:
     void updateGraphToolTip(QMouseEvent *event);
     void parameterWasEdited(ParameterEditAction);
 
+    void log(const QString &);
+    void logError(const QString &);
+
 private:
 
     //void populateParameterModel(ParameterModel*);
@@ -53,7 +56,7 @@ private:
 
     void runINCA();
 
-    static bool copyAndOverwriteFile(const QString&, const QString&);
+    //static bool copyAndOverwriteFile(const QString&, const QString&);
     //bool saveCheckParameters();
     //bool tryToSave(const QString&, const QString&);
 
@@ -74,7 +77,7 @@ private:
 
     QVector<ParameterEditAction> editUndoStack_;
 
-    SSHInterface ssh;
+    SSHInterface sshInterface_;
 };
 
 
