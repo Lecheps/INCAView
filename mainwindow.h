@@ -42,6 +42,9 @@ private slots:
     void undo(bool);
     void updateGraphToolTip(QMouseEvent *event);
     void parameterWasEdited(ParameterEditAction);
+    void handleSSHDisconnect(const QString& message);
+    void onRunINCAFinished();
+    void handleRunINCAError(const QString&);
 
     void log(const QString &);
     void logError(const QString &);
@@ -56,6 +59,7 @@ private:
 
     void runINCA();
 
+
     //static bool copyAndOverwriteFile(const QString&, const QString&);
     //bool saveCheckParameters();
     //bool tryToSave(const QString&, const QString&);
@@ -69,7 +73,10 @@ private:
     ParameterModel *parameterModel_;
     LineEditDelegate *lineEditDelegate;
 
-    char *serverAddress_, *remoteUsername_, *remoteDBpath_;
+    const char *serverAddress_;
+    const char *remoteUsername_;
+    const char *remoteDBpath_;
+    const char *keyPath_;
 
     bool stuffHasBeenEditedSinceLastSave = false;
 

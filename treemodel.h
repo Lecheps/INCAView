@@ -88,6 +88,7 @@ public:
 
     QString getName(int);
     QString getParentName(int);
+    int childCount(int);
 
 private:
     std::unordered_map<int,TreeItem*> IDtoTreeItem_;

@@ -7,12 +7,13 @@
 NOTE: This program should always print exactly one of the following:
 	"ERROR: <specification of error>" if an error occured
 	"SUCCESS: <whatever you want>" otherwise.
-They have to be printed to the stdout, because INCAView will not be able to read stderr over the ssh connection.
+They have to be printed to the stdout, because INCAView will only be able to listen to one channel at a time over the ssh connection.
 */
 
 /*
 Stuff left to do:
-- Error reporting in case of errors in fopen, fread, fwrite, malloc.
+- Error reporting in case of errors in fread, fwrite, malloc.
+- Error checking of argv input? (Should not be needed since this program is only called by INCAView).
 - ...
 */
 
@@ -138,9 +139,8 @@ static int export_structure_callback(void *data, int argc, char **argv, char **c
 	return 0;
 }
 
-bool export_parameter_structure(sqlite3 *db, const char *filename)
+bool export_parameter_structure(sqlite3 *db, FILE *file)
 {
-	FILE *file = fopen(filename, "w");
 	const char *sqlcommand = "SELECT parent.ID as parentID, child.ID, child.Name "
                               "FROM ParameterStructure as parent, ParameterStructure as child "
                               "WHERE child.lft > parent.lft "
@@ -161,14 +161,11 @@ bool export_parameter_structure(sqlite3 *db, const char *filename)
 		return false;
 	}
 	
-	fclose(file);
-	
 	return true;
 }
 
-bool export_results_structure(sqlite3 *db, const char *filename)
+bool export_results_structure(sqlite3 *db, FILE *file)
 {
-	FILE *file = fopen(filename, "w");
 	const char *sqlcommand = "SELECT parent.ID AS parentID, child.ID, child.Name "
 							 "FROM ResultsStructure AS parent, ResultsStructure AS child "
 							 "WHERE child.lft > parent.lft "
@@ -189,7 +186,6 @@ bool export_results_structure(sqlite3 *db, const char *filename)
 		return false;
 	}
 	
-	fclose(file);
 	return true;
 }
 
@@ -213,9 +209,8 @@ static int export_parameter_values_min_max_callback(void *data, int argc, char *
 	return 0;
 }
 
-bool export_parameter_values_min_max(sqlite3 *db, const char *filename)
+bool export_parameter_values_min_max(sqlite3 *db, FILE *file)
 {
-	FILE *file = fopen(filename, "w");
 	const char *sqlcommand = "SELECT "
 							 "ParameterStructure.ID, ParameterStructure.type, ParameterValues.minimum, ParameterValues.maximum, ParameterValues.value "
 							 "FROM ParameterStructure INNER JOIN ParameterValues "
@@ -231,20 +226,13 @@ bool export_parameter_values_min_max(sqlite3 *db, const char *filename)
 		return false;
 	}
 	
-	fclose(file);
-	
 	return true;
 }
 
 
 
-bool import_parameter_values(sqlite3 *db, const char *infilename)
+bool import_parameter_values(sqlite3 *db, FILE *file)
 {
-	FILE *file = fopen(infilename, "r");
-	//if(!file)
-	//{
-	//	perror("fopen");
-	//}
 	u64 numparameters;
 	fread(&numparameters, sizeof(u64), 1, file);
 	for(int i = 0; i < numparameters; ++i)
@@ -269,8 +257,6 @@ bool import_parameter_values(sqlite3 *db, const char *infilename)
 			return false;
 		}
 	}
-	
-	fclose(file);
 	
 	return true;
 }
@@ -302,13 +288,8 @@ static int export_result_values_count_callback(void *data, int argc, char **argv
 	return 0;
 }
 
-bool export_result_values(sqlite3 *db, u32 numrequests, u32* requested_ids, const char *outfilename)
+bool export_result_values(sqlite3 *db, u32 numrequests, u32* requested_ids, FILE *file)
 {
-	FILE *file = fopen(outfilename, "w");
-	//if(!file)
-	//{
-	//	perror("fopen");
-	//}
 	u64 numrequests64 = (u64)numrequests;
 	fwrite(&numrequests64, sizeof(u64), 1, file);
 	
@@ -346,7 +327,6 @@ bool export_result_values(sqlite3 *db, u32 numrequests, u32* requested_ids, cons
 		assert(count == outdata.count);
 	}
 	
-	fclose(file);
 	return true;
 }
 
@@ -364,67 +344,87 @@ int main(int argc, char *argv[])
 		char *dbname = argv[2];
 		char *filename = argv[3];
 		sqlite3 *db;
-		int rc = sqlite3_open_v2(dbname, &db, SQLITE_OPEN_READWRITE, 0);
-
-		if(rc != SQLITE_OK)
+		FILE *file;
+		if(strcmp(argv[1], IMPORT_PARAMETER_VALUES_COMMAND) == 0)
 		{
-			fprintf(stdout, "ERROR: Unable to open database %s: %s\n", dbname, sqlite3_errmsg(db));
+			file = fopen(filename, "r");
 		}
 		else
 		{
-			bool success = false;
-			if(strcmp(argv[1], EXPORT_RESULT_VALUES_COMMAND) == 0)
+			file = fopen(filename, "w");
+		}
+		
+		if(!file)
+		{
+			fprintf(stdout, "ERROR: Unable to open file %s", filename);
+			return 0;
+		}
+		
+		int rc = sqlite3_open_v2(dbname, &db, SQLITE_OPEN_READWRITE, 0);
+		
+		if(rc != SQLITE_OK)
+		{
+			fprintf(stdout, "ERROR: Unable to open database %s: %s\n", dbname, sqlite3_errmsg(db));
+			return 0;
+		}
+
+		bool success = false;
+		if(strcmp(argv[1], EXPORT_RESULT_VALUES_COMMAND) == 0)
+		{
+			u32 numrequests = argc - 4;
+			if(numrequests > 0)
 			{
-				u32 numrequests = argc - 4;
-				if(numrequests > 0)
-				{
-					u32 *requested_ids = (u32 *)malloc(numrequests*sizeof(u32));
-					for(u32 i = 0; i < numrequests; ++i)
-					{	
-						u32 ID = (u32)atoi(argv[4+i]);
-						//TODO: check if format was correct
-						requested_ids[i] = ID;
-					}
-					success = export_result_values(db, numrequests, requested_ids, filename);
-					
-					free(requested_ids);
-					
-					//test_result_values_file(filename);
+				u32 *requested_ids = (u32 *)malloc(numrequests*sizeof(u32));
+				for(u32 i = 0; i < numrequests; ++i)
+				{	
+					u32 ID = (u32)atoi(argv[4+i]);
+					//TODO: check if format was correct
+					requested_ids[i] = ID;
 				}
-			}
-			else if(strcmp(argv[1], IMPORT_PARAMETER_VALUES_COMMAND) == 0)
-			{
-				//write_parameter_import_test_file((filename);
+				success = export_result_values(db, numrequests, requested_ids, file);
 				
-				success = import_parameter_values(db, filename);
-			}
-			else if(strcmp(argv[1], EXPORT_RESULTS_STRUCTURE_COMMAND) == 0)
-			{
-				success = export_results_structure(db, filename);
+				free(requested_ids);
 				
-				//test_structure_file(filename);
+				//test_result_values_file(filename);
 			}
-			else if(strcmp(argv[1], EXPORT_PARAMETER_STRUCTURE_COMMAND) == 0)
-			{
-				success = export_parameter_structure(db, filename);
-				//test_structure_file(filename);
-			}
-			else if(strcmp(argv[1], EXPORT_PARAMETER_VALUES_MIN_MAX_COMMAND) == 0)
-			{
-				success = export_parameter_values_min_max(db, filename);
-			}
-			else
-			{
-				fprintf(stdout, "ERROR: Unexpected command: %s\n", argv[1]);
-			}
+		}
+		else if(strcmp(argv[1], IMPORT_PARAMETER_VALUES_COMMAND) == 0)
+		{
+			//write_parameter_import_test_file((filename);
 			
-			if(success)
-			{
-				fprintf(stdout, "SUCCESS: Successfully executed command: %s", argv[1]);
-			}
-		}	
+			success = import_parameter_values(db, file);
+		}
+		else if(strcmp(argv[1], EXPORT_RESULTS_STRUCTURE_COMMAND) == 0)
+		{
+			success = export_results_structure(db, file);
+			
+			//test_structure_file(filename);
+		}
+		else if(strcmp(argv[1], EXPORT_PARAMETER_STRUCTURE_COMMAND) == 0)
+		{
+			success = export_parameter_structure(db, file);
+			//test_structure_file(filename);
+		}
+		else if(strcmp(argv[1], EXPORT_PARAMETER_VALUES_MIN_MAX_COMMAND) == 0)
+		{
+			success = export_parameter_values_min_max(db, file);
+		}
+		else
+		{
+			fprintf(stdout, "ERROR: Unexpected command: %s\n", argv[1]);
+		}
+		
+		if(success)
+		{
+			fprintf(stdout, "SUCCESS: Successfully executed command: %s", argv[1]);
+		}
 			
 		sqlite3_close(db);
+		fclose(file);
+	}
+	else
+	{
+		fprintf(stdout, "ERROR: To few arguments to sqlhandler. Got %d arguments, expected at least 4", argc);
 	}
 	return 0;
 }

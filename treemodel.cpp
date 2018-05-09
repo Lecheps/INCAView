@@ -104,6 +104,15 @@ QString TreeModel::getParentName(int ID)
     return "";
 }
 
+int TreeModel::childCount(int ID)
+{
+    auto treeItem = IDtoTreeItem_.find(ID);
+    if(treeItem != IDtoTreeItem_.end())
+    {
+        return treeItem->second->childCount();
+    }
+    return 0;
+}
 
 
 TreeModel::~TreeModel()

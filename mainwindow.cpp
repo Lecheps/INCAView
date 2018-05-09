@@ -13,11 +13,13 @@ MainWindow::MainWindow(QWidget *parent) :
     remoteUsername_ = "";
     serverAddress_ = "";
     remoteDBpath_ = "";
+    keyPath_ = "";
 
-    //ui->pushSave->setEnabled(false);
-    //ui->pushSaveAs->setEnabled(false);
+    treeParameters_ = 0;
+    treeResults_ = 0;
+    parameterModel_ = 0;
+
     ui->pushRun->setEnabled(false);
-    //ui->pushConnect->setEnabled(false);
 
     ui->radioButtonDaily->click();
     ui->radioButtonDaily->setEnabled(false);
@@ -62,8 +64,13 @@ MainWindow::MainWindow(QWidget *parent) :
 
     QObject::connect(ui->widgetPlotResults, QCustomPlot::mouseMove, this, &MainWindow::updateGraphToolTip);
 
-    QObject::connect(&sshInterface_, SSHInterface::log, this, &MainWindow::log);
-    QObject::connect(&sshInterface_, SSHInterface::logError, this, &MainWindow::logError);
+    QObject::connect(&sshInterface_, &SSHInterface::log, this, &MainWindow::log);
+    QObject::connect(&sshInterface_, &SSHInterface::logError, this, &MainWindow::logError);
+    QObject::connect(&sshInterface_, &SSHInterface::runINCAFinished, this, &MainWindow::onRunINCAFinished);
+    QObject::connect(&sshInterface_, &SSHInterface::runINCAError, this, &MainWindow::handleRunINCAError);
+    QObject::connect(&sshInterface_, &SSHInterface::sessionWasDisconnected, this, &MainWindow::handleSSHDisconnect);
+
+    ui->progressBarRunInca->setVisible(false);
 
     //qDebug(QDir::currentPath().toLatin1().data());
 }
@@ -87,7 +94,7 @@ void MainWindow::logError(const QString& Message)
 
 void MainWindow::resetWindowTitle()
 {
-    QString titlepath = QString("%1@%2/%3").arg(remoteUsername_).arg(serverAddress_).arg(remoteDBpath_);
+    QString titlepath = QString("%1@%2:~/%3").arg(remoteUsername_).arg(serverAddress_).arg(remoteDBpath_);
     if(sshInterface_.isSessionConnected() && stuffHasBeenEditedSinceLastSave)
     {
         setWindowTitle("*" + titlepath + " - INCA View");
@@ -103,78 +110,94 @@ void MainWindow::resetWindowTitle()
 
 void MainWindow::on_pushConnect_clicked()
 {
-    if(!sshInterface_.isSessionConnected())
+    ui->pushConnect->setEnabled(false);
+
+    //TODO: Query the user about these
+    serverAddress_ = "35.230.143.177";
+    remoteUsername_ = "magnus";
+    remoteDBpath_ = "incaview/test.db";
+    keyPath_ = "C:\\testkeys\\magnusKey";
+
+    log(QString("Attempting to connect to ") + serverAddress_ + " ...");
+
+    bool success = sshInterface_.connectSession(remoteUsername_, serverAddress_, keyPath_);
+
+    //TODO: Try to make it so that the program does not crash or stall for too long if the connection times out or is unsuccessful!
+
+    if(success)
     {
-        ui->pushConnect->setEnabled(false);
+        log("Connection successful");
 
-        //TODO: Query the user about these
-        //serverAddress_ = "35.197.231.4";
-        serverAddress_ = "35.197.208.63";
-        remoteUsername_ = "magnus";
-        //remoteDBpath_ = "test.db";
-        remoteDBpath_ = "incaview/test.db";
-        //const char *keypath = "C:\\testkeys\\testkey";
-        const char *keypath = "C:\\testkeys\\magnusKey";
 
-        log(QString("Attempting to connect to ") + serverAddress_ + " ...");
-
-        bool success = sshInterface_.connectSession(remoteUsername_, serverAddress_, keypath);
-
-        //TODO: Make it so that the program does not crash or stall for too long if the connection times out or is unsuccessful!
-
-        if(success)
+        //NOTE: In case we connected previously, then disconnected for some reason, and reconnect now:
+        //TODO: Instead of doing this we may want to keep the state of the parameter model and allow the user to use that if they reconnect!
+        //  (However, then we need to check that they reconnected to the same server+database)
         {
-            log("Connection successful");
-
-            ui->pushRun->setEnabled(true);
-
-            editUndoStack_.clear();
-
-            ui->radioButtonDaily->setEnabled(true);
-            ui->radioButtonMonthlyAverages->setEnabled(true);
-            ui->radioButtonYearlyAverages->setEnabled(true);
-
-            resetWindowTitle();
-
-            parameterModel_ = new ParameterModel();
-            treeParameters_ = new TreeModel("Parameter Structure");
-            treeResults_ = new TreeModel("Results Structure");
-            populateParameterModels(treeParameters_, parameterModel_);
-            populateTreeModelResults(treeResults_);
-
-            ui->tableViewParameters->setModel(parameterModel_);
-            ui->treeViewParameters->setModel(treeParameters_);
-            ui->treeViewParameters->expandToDepth(3);
-            ui->treeViewParameters->setColumnHidden(1, true);
-            ui->treeViewParameters->resizeColumnToContents(0);
-            ui->treeViewResults->setModel(treeResults_);
-            ui->treeViewResults->expandToDepth(1);
-            ui->treeViewResults->resizeColumnToContents(0);
-            ui->treeViewResults->setColumnHidden(1, true);
-            ui->treeViewResults->setSelectionMode(QTreeView::ExtendedSelection); // Allows to ctrl-select multiple items.
-
-            QObject::connect(parameterModel_, &ParameterModel::parameterWasEdited, this, &MainWindow::parameterWasEdited);
-            QObject::connect(ui->treeViewParameters->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateParameterView);
-            QObject::connect(ui->treeViewResults->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateGraphsAndResultSummary);
-
-            //NOTE: this is to mark that the x axis is uninitialized so that it can be initialized later. TODO: is there a better way to do it?
-            ui->widgetPlotResults->xAxis->setRange(0.0, 0.1);
-
-            //updateGraphsAndResultSummary();
+            if(treeParameters_) delete treeParameters_;
+            if(treeResults_) delete treeResults_;
+            if(parameterModel_) delete parameterModel_;
         }
-        else
-        {
-            ui->pushConnect->setEnabled(true);
 
-            //NOTE: SSH errors are logged by the SSHInterface.
-        }
+
+        ui->pushRun->setEnabled(true);
+
+        editUndoStack_.clear();
+
+        ui->radioButtonDaily->setEnabled(true);
+        ui->radioButtonMonthlyAverages->setEnabled(true);
+        ui->radioButtonYearlyAverages->setEnabled(true);
+
+        resetWindowTitle();
+
+        parameterModel_ = new ParameterModel();
+        treeParameters_ = new TreeModel("Parameter Structure");
+        treeResults_ = new TreeModel("Results Structure");
+        populateParameterModels(treeParameters_, parameterModel_);
+        populateTreeModelResults(treeResults_);
+
+        ui->tableViewParameters->setModel(parameterModel_);
+        ui->treeViewParameters->setModel(treeParameters_);
+        ui->treeViewParameters->expandToDepth(3);
+        ui->treeViewParameters->setColumnHidden(1, true);
+        ui->treeViewParameters->resizeColumnToContents(0);
+        ui->treeViewResults->setModel(treeResults_);
+        ui->treeViewResults->expandToDepth(1);
+        ui->treeViewResults->resizeColumnToContents(0);
+        ui->treeViewResults->setColumnHidden(1, true);
+        ui->treeViewResults->setSelectionMode(QTreeView::ExtendedSelection); // Allows to ctrl-select multiple items.
+
+        QObject::connect(parameterModel_, &ParameterModel::parameterWasEdited, this, &MainWindow::parameterWasEdited);
+        QObject::connect(ui->treeViewParameters->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateParameterView);
+        QObject::connect(ui->treeViewResults->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateGraphsAndResultSummary);
+
+        //NOTE: this is to mark that the x axis is uninitialized so that it can be initialized later. TODO: is there a better way to do it?
+        ui->widgetPlotResults->xAxis->setRange(0.0, 0.1);
+
+        //updateGraphsAndResultSummary();
     }
     else
     {
-        qDebug("Attempted to connect while the session is already connected. This should never happen!");
+        //NOTE: SSH errors are handled elsewhere.
     }
 }
 
+
+void MainWindow::handleSSHDisconnect(const QString& message)
+{
+    logError("SSH: Session was disconnected: " + message);
+
+    ui->pushRun->setEnabled(false);
+
+    ui->radioButtonDaily->setEnabled(false);
+    ui->radioButtonMonthlyAverages->setEnabled(false);
+    ui->radioButtonYearlyAverages->setEnabled(false);
+
+    //resetWindowTitle(); //NOTE: Currently this would cause an infinite loop since it can cause the ssh disconnect signal to be emitted again..
+
+    //TODO: We need to decide what we to to the state of the parameter model and tree models.
+
+    ui->pushConnect->setEnabled(true);
+}
 
 
 void MainWindow::on_pushRun_clicked()
@@ -200,6 +223,10 @@ void MainWindow::on_pushRun_clicked()
             }
         }
     }
+    else
+    {
+        logError("Attempted to run INCA while the session is disconnected. This should not be possible since the run button should be disabled...");
+    }
 }
 
 void MainWindow::closeEvent (QCloseEvent *event)
@@ -223,15 +250,32 @@ void MainWindow::closeEvent (QCloseEvent *event)
 
 void MainWindow::runINCA()
 {
+    ui->pushRun->setEnabled(false);
+    toggleStuffHasBeenEditedSinceLastSave(false);
     log("Attempting to run INCA...");
 
     //Serialize parameters and send them to the remote database
     QVector<parameter_serial_entry> parameterdata;
     parameterModel_->serializeParameterData(parameterdata);
     sshInterface_.writeParameterValues(remoteDBpath_, parameterdata);
-    //TODO: actually run INCA
 
+    sshInterface_.runINCA(remoteUsername_, serverAddress_, keyPath_, ui->progressBarRunInca);
+}
+
+void MainWindow::onRunINCAFinished()
+{
+    //TODO: Receive an error code here if something went wrong, and clean up accordingly.
+
+    log("INCA run finished.");
     updateGraphsAndResultSummary();
+    ui->pushRun->setEnabled(true);
+}
+
+void MainWindow::handleRunINCAError(const QString& message)
+{
+    logError(message);
+
+    //TODO: cleanup
 }
 
 void MainWindow::updateParameterView(const QItemSelection& selected, const QItemSelection& deselected)
@@ -251,241 +295,235 @@ void MainWindow::updateParameterView(const QItemSelection& selected, const QItem
 
 void MainWindow::updateGraphsAndResultSummary()
 {
-    ui->tabWidget->setCurrentIndex(0); //NOTE: To set the result info tab selected (in case the log was selected). Debatable if we want this.
-
-    //NOTE: Right now we just throw out all selected graphs. We could keep track of which ID corresponds to which graph (in which plot mode) and then only update/create the
-    // graphs that have changed. However, this should only be necessary if this routine runs very slowly on some user machines.
-    ui->widgetPlotResults->clearGraphs();
-    ui->widgetPlotResults->yAxis->setRange(0, 2.0*QCPRange::minRange); //Find a better way to clear it?
-    ui->textResultsInfo->clear();
-
-    QModelIndexList indexes = ui->treeViewResults->selectionModel()->selectedIndexes();
-
-    QVector<int> IDs;
-    for(auto index : indexes)
+    if(sshInterface_.isSessionConnected())
     {
-        auto idx = index.model()->index(index.row(),index.column() + 1, index.parent());
-        int ID = (treeParameters_->itemData(idx))[0].toInt();
-        if(index.column() == 0 && ID != 0)
+        //ui->tabWidget->setCurrentIndex(0); //NOTE: To set the result info tab selected (in case the log was selected). Debatable if we want this.
+
+        //NOTE: Right now we just throw out all previous graphs and re-create everything. We could keep track of which ID corresponds to which graph (in which plot mode)
+        // and then only update/create the graphs that have changed. However, this should only be necessary if this routine runs very slowly on some user machines.
+        ui->widgetPlotResults->clearGraphs();
+        ui->widgetPlotResults->yAxis->setRange(0, 2.0*QCPRange::minRange); //NOTE: this is our way of "clearing" the range so that it is correctly set later. Could maybe find a better way.
+        ui->textResultsInfo->clear();
+
+        QModelIndexList indexes = ui->treeViewResults->selectionModel()->selectedIndexes();
+
+        QVector<int> IDs;
+        for(auto index : indexes)
         {
-            IDs.push_back(ID);
-        }
-    }
-
-    int firstunassignedcolor = 0;
-    if(IDs.count() && sshInterface_.isSessionConnected())
-    {
-        QVector<QVector<double>> resultsets;
-        sshInterface_.getResultSets(remoteDBpath_, IDs, resultsets);
-
-        //TODO: Better error handling.
-        Q_ASSERT(resultsets.count() == IDs.count());
-
-        //qDebug(QString::number(resultsets.count()).toLatin1().data());
-
-        for(int i = 0; i < IDs.count(); ++i)
-        {
-            int ID = IDs[i];
-            QVector<double>& yval = resultsets[i];
-            int cnt = yval.count();
-            QVector<double> xval(cnt);
-
-            //qDebug(QString::number(cnt).toLatin1().data());
-
-            //TODO: Currently times are just for debugging!!! Should read actual times from a different source.
-            auto startdate = QDateTime::currentDateTime();
-            startdate = QDateTime(startdate.date()); //Remove hours, minutes, seconds
-            uint starttime = startdate.toTime_t();
-            double min = std::numeric_limits<double>::max();
-            double max = std::numeric_limits<double>::min();
-
-            for(int j = 0; j < cnt; ++j)
+            auto idx = index.model()->index(index.row(),index.column() + 1, index.parent());
+            int ID = (treeResults_->itemData(idx))[0].toInt();
+            if(index.column() == 0 && ID != 0 && treeResults_->childCount(ID) == 0) //NOTE: If it has children in the tree, it is an indexer, not a result series.
             {
-                double value = yval[j];
-                //qDebug(QString::number(value).toLatin1().data());
-                xval[j] = (double)(starttime + 24*3600*j);
-                min = value < min ? value : min;
-                max = value > max ? value : max;
-            }
-
-            if(cnt != 0)
-            {
-                QString name = treeResults_->getName(ID);
-                QString parentName = treeResults_->getParentName(ID);
-                QColor& color = graphColors_[firstunassignedcolor++];
-                if(firstunassignedcolor == graphColors_.count()) firstunassignedcolor = 0; // Cycle the colors
-
-                double mean = 0;
-                for(double d : yval) mean += d;
-                mean /= (double)cnt;
-                double stddev = 0;
-                for(double d : yval) stddev += (d - mean)*(d - mean);
-                stddev = std::sqrt(stddev / (double) cnt);
-
-                ui->textResultsInfo->append(QString(
-                        "%1 (%2) <font color=%3>&#9608;&#9608;</font><br/>" //NOTE: this is somewhat reliant on the font having the character &#9608; (FULL BLOCK)
-                        "min: %4<br/>"
-                        "max: %5<br/>"
-                        "average: %6<br/>"
-                        "standard deviation: %7<br/>"
-                        "<br/>"
-                      ).arg(name, parentName, color.name())
-                       .arg(min, 0, 'g', 5)                          //TODO: should this be moved below to display the min of yearly averages when yearly averages are selected?
-                       .arg(max, 0, 'g', 5)
-                       .arg(mean, 0, 'g', 5)
-                       .arg(stddev, 0, 'g', 5)
-                );
-
-                QCPGraph* graph = ui->widgetPlotResults->addGraph();
-                graph->setPen(QPen(color));
-
-                if(ui->radioButtonYearlyAverages->isChecked())
-                {
-                    QVector<double> displayedx, displayedy;
-                    min = std::numeric_limits<double>::max();
-                    max = std::numeric_limits<double>::min();
-
-                    QDateTime date = QDateTime::fromTime_t(starttime);
-                    int prevyear = date.date().year();
-                    double sum = 0;
-                    int dayscnt = 0;
-                    for(int j = 0; j < cnt; ++j)
-                    {
-                        sum += yval[j];
-                        dayscnt++;
-                        int curyear = date.date().year();
-                        if(curyear != prevyear)
-                        {
-                            double value = sum / (double) dayscnt;
-                            displayedy.push_back(value);
-                            displayedx.push_back(QDateTime(QDate(prevyear, 1, 1)).toTime_t());
-                            min = value < min ? value : min;
-                            max = value > max ? value : max;
-
-                            sum = 0;
-                            dayscnt = 0;
-                            prevyear = curyear;
-                        }
-                        date = date.addDays(1);
-                    }
-                    QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
-                    dateTicker->setDateTimeFormat("yyyy");
-                    ui->widgetPlotResults->xAxis->setTicker(dateTicker);
-
-                    graph->setData(displayedx, displayedy);
-                }
-                else if(ui->radioButtonMonthlyAverages->isChecked())
-                {
-                    QVector<double> displayedx, displayedy;
-                    min = std::numeric_limits<double>::max();
-                    max = std::numeric_limits<double>::min();
-
-                    QDateTime date = QDateTime::fromTime_t(starttime);
-                    int prevmonth = date.date().month();
-                    int prevyear = date.date().year();
-                    double sum = 0;
-                    int dayscnt = 0;
-                    for(int j = 0; j < cnt; ++j)
-                    {
-                        sum += yval[j];
-                        dayscnt++;
-                        int curmonth = date.date().month();
-                        if(curmonth != prevmonth)
-                        {
-                            double value = sum / (double) dayscnt;
-                            displayedy.push_back(value);
-                            displayedx.push_back(QDateTime(QDate(prevyear, prevmonth, 1)).toTime_t());
-                            min = value < min ? value : min;
-                            max = value > max ? value : max;
-
-                            sum = 0;
-                            dayscnt = 0;
-                            prevmonth = curmonth;
-                            prevyear = date.date().year();
-                        }
-                        date = date.addDays(1);
-                    }
-                    QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
-                    dateTicker->setDateTimeFormat("MMMM\nyyyy");
-                    ui->widgetPlotResults->xAxis->setTicker(dateTicker);
-
-                    graph->setData(displayedx, displayedy);
-                }
-                else
-                {
-                    QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
-                    dateTicker->setDateTimeFormat("d. MMMM\nyyyy");
-                    ui->widgetPlotResults->xAxis->setTicker(dateTicker);
-
-                    graph->setData(xval, yval);
-                }
-
-                QCPRange existingYRange = ui->widgetPlotResults->yAxis->range();
-                double newmax = existingYRange.upper < max ? max : existingYRange.upper;
-                double newmin = existingYRange.lower > min ? min : existingYRange.lower;
-                if(newmax - newmin < QCPRange::minRange)
-                {
-                    newmax = newmin + 2.0*QCPRange::minRange;
-                }
-                ui->widgetPlotResults->yAxis->setRange(newmin, newmax);
-
-                if(ui->widgetPlotResults->xAxis->range().upper - ui->widgetPlotResults->xAxis->range().lower < 1.0) //TODO: is there a better way to check if it is uninitialized?
-                    ui->widgetPlotResults->xAxis->setRange(xval.first(), xval.last());
-
+                IDs.push_back(ID);
             }
         }
-    }
 
-    ui->widgetPlotResults->replot();
-    updateGraphToolTip(0); // Clear the graph tooltip.
+        int firstunassignedcolor = 0;
+        if(IDs.count())
+        {
+            QVector<QVector<double>> resultsets;
+            bool success = sshInterface_.getResultSets(remoteDBpath_, IDs, resultsets);
+
+            if(success)
+            {
+                for(int i = 0; i < IDs.count(); ++i)
+                {
+                    int ID = IDs[i];
+                    QVector<double>& yval = resultsets[i];
+                    int cnt = yval.count();
+                    QVector<double> xval(cnt);
+
+                    //qDebug(QString::number(cnt).toLatin1().data());
+
+                    //TODO: These time values are just for debugging!!! We should read actual time values from the model output.
+                    auto startdate = QDateTime::currentDateTime();
+                    startdate = QDateTime(startdate.date()); //Remove hours, minutes, seconds
+                    uint starttime = startdate.toTime_t();
+                    double min = std::numeric_limits<double>::max();
+                    double max = std::numeric_limits<double>::min();
+
+                    for(int j = 0; j < cnt; ++j)
+                    {
+                        double value = yval[j];
+                        //qDebug(QString::number(value).toLatin1().data());
+                        xval[j] = (double)(starttime + 24*3600*j);
+                        min = value < min ? value : min;
+                        max = value > max ? value : max;
+                    }
+
+                    if(cnt != 0)
+                    {
+                        QString name = treeResults_->getName(ID);
+                        QString parentName = treeResults_->getParentName(ID);
+                        QColor& color = graphColors_[firstunassignedcolor++];
+                        if(firstunassignedcolor == graphColors_.count()) firstunassignedcolor = 0; // Cycle the colors
+
+                        double mean = 0;
+                        for(double d : yval) mean += d;
+                        mean /= (double)cnt;
+                        double stddev = 0;
+                        for(double d : yval) stddev += (d - mean)*(d - mean);
+                        stddev = std::sqrt(stddev / (double) cnt);
+
+                        ui->textResultsInfo->append(QString(
+                                "%1 (%2) <font color=%3>&#9608;&#9608;</font><br/>" //NOTE: this is reliant on the font having the character &#9608;
+                                "min: %4<br/>"
+                                "max: %5<br/>"
+                                "average: %6<br/>"
+                                "standard deviation: %7<br/>"
+                                "<br/>"
+                              ).arg(name, parentName, color.name())
+                               .arg(min, 0, 'g', 5)
+                               .arg(max, 0, 'g', 5)
+                               .arg(mean, 0, 'g', 5)
+                               .arg(stddev, 0, 'g', 5)
+                        );
+
+                        QCPGraph* graph = ui->widgetPlotResults->addGraph();
+                        graph->setPen(QPen(color));
+
+                        if(ui->radioButtonYearlyAverages->isChecked())
+                        {
+                            QVector<double> displayedx, displayedy;
+                            min = std::numeric_limits<double>::max();
+                            max = std::numeric_limits<double>::min();
+
+                            QDateTime date = QDateTime::fromTime_t(starttime);
+                            int prevyear = date.date().year();
+                            double sum = 0;
+                            int dayscnt = 0;
+                            for(int j = 0; j < cnt; ++j)
+                            {
+                                sum += yval[j];
+                                dayscnt++;
+                                int curyear = date.date().year();
+                                if(curyear != prevyear)
+                                {
+                                    double value = sum / (double) dayscnt;
+                                    displayedy.push_back(value);
+                                    displayedx.push_back(QDateTime(QDate(prevyear, 1, 1)).toTime_t());
+                                    min = value < min ? value : min;
+                                    max = value > max ? value : max;
+
+                                    sum = 0;
+                                    dayscnt = 0;
+                                    prevyear = curyear;
+                                }
+                                date = date.addDays(1);
+                            }
+                            QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
+                            dateTicker->setDateTimeFormat("yyyy");
+                            ui->widgetPlotResults->xAxis->setTicker(dateTicker);
+
+                            graph->setData(displayedx, displayedy, true);
+                        }
+                        else if(ui->radioButtonMonthlyAverages->isChecked())
+                        {
+                            QVector<double> displayedx, displayedy;
+                            min = std::numeric_limits<double>::max();
+                            max = std::numeric_limits<double>::min();
+
+                            QDateTime date = QDateTime::fromTime_t(starttime);
+                            int prevmonth = date.date().month();
+                            int prevyear = date.date().year();
+                            double sum = 0;
+                            int dayscnt = 0;
+                            for(int j = 0; j < cnt; ++j)
+                            {
+                                sum += yval[j];
+                                dayscnt++;
+                                int curmonth = date.date().month();
+                                if(curmonth != prevmonth)
+                                {
+                                    double value = sum / (double) dayscnt;
+                                    displayedy.push_back(value);
+                                    displayedx.push_back(QDateTime(QDate(prevyear, prevmonth, 1)).toTime_t());
+                                    min = value < min ? value : min;
+                                    max = value > max ? value : max;
+
+                                    sum = 0;
+                                    dayscnt = 0;
+                                    prevmonth = curmonth;
+                                    prevyear = date.date().year();
+                                }
+                                date = date.addDays(1);
+                            }
+                            QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
+                            dateTicker->setDateTimeFormat("MMMM\nyyyy");
+                            ui->widgetPlotResults->xAxis->setTicker(dateTicker);
+
+                            graph->setData(displayedx, displayedy, true);
+                        }
+                        else
+                        {
+                            QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
+                            dateTicker->setDateTimeFormat("d. MMMM\nyyyy");
+                            ui->widgetPlotResults->xAxis->setTicker(dateTicker);
+
+                            graph->setData(xval, yval, true);
+                        }
+
+                        QCPRange existingYRange = ui->widgetPlotResults->yAxis->range();
+                        double newmax = existingYRange.upper < max ? max : existingYRange.upper;
+                        double newmin = existingYRange.lower > min ? min : existingYRange.lower;
+                        if(newmax - newmin < QCPRange::minRange)
+                        {
+                            newmax = newmin + 2.0*QCPRange::minRange;
+                        }
+                        ui->widgetPlotResults->yAxis->setRange(newmin, newmax);
+
+                        if(ui->widgetPlotResults->xAxis->range().upper - ui->widgetPlotResults->xAxis->range().lower < 1.0) //TODO: is there a better way to check if it is uninitialized?
+                            ui->widgetPlotResults->xAxis->setRange(xval.first(), xval.last());
+
+                    }
+                }
+            }
+        }
+
+        ui->widgetPlotResults->replot();
+        updateGraphToolTip(0); // Clear the graph tooltip.
+    }
 }
 
 
 void MainWindow::updateGraphToolTip(QMouseEvent *event)
 {
     //NOTE: this is for changing the labelGraphValues label to print the values of the visible graphs when the mouse hovers over them. Not really a tooltip. Better name?
-    if(sshInterface_.isSessionConnected())
+    if(event && ui->widgetPlotResults->graphCount() > 0)
     {
-        if(event && ui->widgetPlotResults->graphCount() > 0)
+        uint x = (uint)ui->widgetPlotResults->xAxis->pixelToCoord(event->pos().x());
+
+        QModelIndexList indexes = ui->treeViewResults->selectionModel()->selectedIndexes();
+        QString valueString= "";
+        bool first = true;
+        for(int i = 0; i < ui->widgetPlotResults->graphCount(); ++i)
         {
-            uint x = (uint)ui->widgetPlotResults->xAxis->pixelToCoord(event->pos().x());
+            if(first) first = false;
+            else valueString.append("\n");
 
-            QModelIndexList indexes = ui->treeViewResults->selectionModel()->selectedIndexes();
-            QString valueString= "";
-            bool first = true;
-            for(int i = 0; i < ui->widgetPlotResults->graphCount(); ++i)
-            {
-                if(first) first = false;
-                else valueString.append("\n");
+            QCPGraph *graph = ui->widgetPlotResults->graph(i);
+            double value = graph->data()->findBegin((double)x)->value;
 
-                QCPGraph *graph = ui->widgetPlotResults->graph(i);
-                double value = graph->data()->findBegin((double)x)->value;
+            int ID = indexes[2*i + 1].data().toInt();
+            valueString.append(treeResults_->getName(ID)).append(" (").append(treeResults_->getParentName(ID)).append("): ");
 
-                int ID = indexes[2*i + 1].data().toInt();
-                valueString.append(treeResults_->getName(ID)).append(" (").append(treeResults_->getParentName(ID)).append("): ");
-
-                valueString.append(QString::number(value, 'g', 5));
-            }
-
-            QDateTime date = QDateTime::fromTime_t(x);
-            QString dateString;
-            if(ui->radioButtonYearlyAverages->isChecked())
-                dateString = QLocale().toString(date, "yyyy").append(" yearly average");
-            else if(ui->radioButtonMonthlyAverages->isChecked())
-                dateString = QLocale().toString(date, "MMMM yyyy").append(" monthly average");
-            else
-                dateString = QLocale().toString(date, "d. MMMM yyyy");
-
-            ui->labelGraphValues->setText(QString("%1:\n%2").arg(dateString).arg(valueString));
+            valueString.append(QString::number(value, 'g', 5));
         }
+
+        QDateTime date = QDateTime::fromTime_t(x);
+        QString dateString;
+        if(ui->radioButtonYearlyAverages->isChecked())
+            dateString = QLocale().toString(date, "yyyy").append(" yearly average");
+        else if(ui->radioButtonMonthlyAverages->isChecked())
+            dateString = QLocale().toString(date, "MMMM yyyy").append(" monthly average");
         else
-        {
-            ui->labelGraphValues->setText("Date:\nValues:");
-        }
+            dateString = QLocale().toString(date, "d. MMMM yyyy");
+
+        ui->labelGraphValues->setText(QString("%1:\n%2").arg(dateString).arg(valueString));
     }
     else
     {
-        ui->labelGraphValues->setText("Not connected to the cloud.");
+        ui->labelGraphValues->setText("Date:\nValues:");
     }
 }
 
@@ -501,12 +539,12 @@ void MainWindow::populateParameterModels(TreeModel* treemodel, ParameterModel *p
         auto parref = IDtoParam.find(item.ID);
         if(parref == IDtoParam.end())
         {
-            //This ID corresponds to something that does not have a value, and so we add it to the tree structure.
+            //This ID corresponds to something that does not have a value (i.e. an indexer), and so we add it to the tree structure.
             treemodel->addItem(item);
         }
         else
         {
-            //This ID corresponds to something that has a value, and so we add it to the parameter model.
+            //This ID corresponds to something that has a value (i.e. a parameter), and so we add it to the parameter model.
             parameter_min_max_val_serial_entry& par = parref->second;
             parametermodel->addParameter(item.name, item.ID, item.parentID, par);
         }

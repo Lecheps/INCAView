@@ -1,16 +1,44 @@
 #include "sshInterface.h"
 #include <QDebug>
+#include <QTime>
 
 SSHInterface::SSHInterface()
 {
     session_ = 0;
+
+    //NOTE: This initialization code should only be run once, so we can't
+    // allow multiple instances of this class. This should not be a problem,
+    // but we could make a static check just to be safe.
+
+    //NOTE: Initialization code is commented out for now since we don't have the libssh_threads.dll, and I don't know how to get/build it for MingW.
+    //  It seems to work fine for now, but we should probably eventually get the dll to be safe.
+    //ssh_threads_set_callbacks(ssh_threads_get_pthread()); //NOTE: QThread is supposedly based on pthread, so this should hopefully work!
+    //ssh_init();
+
+    Q_ASSERT(sizeof(double)==8); //NOTE: If sizeof(double) != 8 on a potential user architecture, someone has to write reformatting code for the data.
+    Q_ASSERT(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__); //NOTE: If we are on a big endian user architecture, we also have to write reformatting code!
+}
+
+SSHInterface::~SSHInterface()
+{
+    //TODO: If we are running an INCA process via SSH, we should probably close that down if possible.
+    //Closing the thread may not properly close the SSH connection and stop the remote process.
+    //TODO: Find out how this works exactly.
+
+    incaWorkerThread_.quit();
+    incaWorkerThread_.wait();
 }
 
 bool SSHInterface::connectSession(const char *user, const char *address, const char *keyfile)
 {
     bool success = false;
-    if(!session_)
+    if(!isSessionConnected())
     {
+        if(session_)
+        {
+            ssh_free(session_);
+        }
+
         session_ = ssh_new();
         if(!session_)
         {
@@ -18,9 +46,6 @@ bool SSHInterface::connectSession(const char *user, const char *address, const c
         }
         else
         {
-            //address = "35.197.231.4"
-            //user = "magnus"
-            //keyfile = "C:\\testkeys\\testkey"
             ssh_options_set(session_, SSH_OPTIONS_HOST, address);
             ssh_options_set(session_, SSH_OPTIONS_USER, user);
 
@@ -31,7 +56,7 @@ bool SSHInterface::connectSession(const char *user, const char *address, const c
             }
             else
             {
-                //TODO: This should probably be wrapped in some safety stuff. See libssh tutorial.
+                //NOTE: This registers the server as a known host on the local user computer. Should be ok to do this without any further checks since we only connect INCAView to servers we own?
                 ssh_write_knownhost(session_);
 
                 rc = ssh_userauth_privatekey_file(session_, 0, keyfile, 0);
@@ -62,16 +87,27 @@ void SSHInterface::disconnectSession()
 
 bool SSHInterface::isSessionConnected()
 {
-    bool result = false;
+    bool connected = false;
     if(session_)
     {
-        result = ssh_is_connected(session_);
+        //TODO: If the session is idle for a few minutes there is an error where this returns true, but when one tries to open a channel it fails with an "unknown error",
+        //  and then the session is disconnected.
+        connected = ssh_is_connected(session_);
+
+        //TODO: We should think about whether or not it is ok to do this here!
+        if(!connected)
+        {
+            const char *message = ssh_get_disconnect_message(session_);
+            if(!message) message = ssh_get_error(session_);
+            emit sessionWasDisconnected(message);
+        }
     }
-    return result;
+    return connected;
 }
 
 bool SSHInterface::runCommand(const char *command, char *resultbuffer, int bufferlen)
 {
+    //NOTE: The return value only indicates whether or not the command was executed. It does not say whether or not the program that was called ran successfully.
     bool success = false;
     if(isSessionConnected())
     {
@@ -89,10 +125,7 @@ bool SSHInterface::runCommand(const char *command, char *resultbuffer, int buffe
             int nbytes = ssh_channel_read(channel, resultbuffer, bufferlen-1, 0);
             resultbuffer[nbytes] = 0;
 
-            //qDebug("Result of running ssh command:");
-            //qDebug(resultbuffer);
-
-            success = true; //NOTE: This only says that the command was executed. It does not say whether or not the program that was called ran successfully.
+            success = true;
 
             ssh_channel_send_eof(channel);
             ssh_channel_close(channel);
@@ -101,7 +134,7 @@ bool SSHInterface::runCommand(const char *command, char *resultbuffer, int buffe
     }
     else
     {
-        emit logError("SSH: Tried to run command without having an open ssh session.");
+        emit logError(QString("SSH: Tried to run command \"%1\" without having an open ssh session.").arg(command));
     }
 
     return success;
@@ -151,7 +184,7 @@ bool SSHInterface::writeFile(const void *contents, size_t contentssize, const ch
     }
     else
     {
-        emit logError("SCP: Tried to run write command without having an open ssh session.");
+        emit logError("SCP: Tried to run file writing command without having an open ssh session.");
     }
 
     return success;
@@ -231,7 +264,7 @@ bool SSHInterface::readFile(void **buffer, size_t* buffersize, const char *remot
     }
     else
     {
-        emit logError("SCP: Tried to run write command without having an open ssh session.");
+        emit logError("SCP: Tried to run file reading command without having an open ssh session.");
     }
 
     return success;
@@ -248,7 +281,6 @@ bool SSHInterface::runSqlHandler(const char *command, const char *db, const char
 {
     char commandbuf[512];
     char resultbuf[512];
-    //sprintf(buf, "./testdirectory/sqlhandler %s %s %s", command, db, tempfile);
     int len = sprintf(commandbuf, "./incaview/sqlhandler %s %s %s", command, db, tempfile);
     if(extraParam)
     {
@@ -271,8 +303,7 @@ bool SSHInterface::runSqlHandler(const char *command, const char *db, const char
     }
     else if(startsWith("SUCCESS:", resultbuf))
     {
-        //NOTE: This log entry should probably be commented out before release:
-        emit log(QString("SSH: SQL: Successful request to remote database: %1").arg(command));
+        //emit log(QString("SSH: SQL: Successful request to remote database: %1").arg(command));
     }
 
     return success;
@@ -286,21 +317,24 @@ void SSHInterface::getStructureData(const char *remoteDB, const char *command, Q
     {
         void *filedata = 0;
         size_t filesize;
-        readFile(&filedata, &filesize, "~/data.dat");
-        uint8_t *at = (uint8_t *)filedata;
-        while(at < (uint8_t *)filedata + filesize)
+        success = readFile(&filedata, &filesize, "~/data.dat");
+        if(success)
         {
-            structure_serial_entry *entry = (structure_serial_entry *)at;
-            at += sizeof(structure_serial_entry);
+            uint8_t *at = (uint8_t *)filedata;
+            while(at < (uint8_t *)filedata + filesize)
+            {
+                structure_serial_entry *entry = (structure_serial_entry *)at;
+                at += sizeof(structure_serial_entry);
 
-            int parentID = (int)entry->parentID;
-            int childID = (int)entry->childID;
+                int parentID = (int)entry->parentID;
+                int childID = (int)entry->childID;
 
-            std::string str((char *)at, (char *)at + entry->childNameLen); //Is there a better way to get a QString from a range based char * (not nullterminated)?
+                std::string str((char *)at, (char *)at + entry->childNameLen); //Is there a better way to get a QString from a range based char * (not nullterminated) than going via a std::string?
 
-            outdata.push_back({QString::fromStdString(str), childID, parentID});
+                outdata.push_back({QString::fromStdString(str), childID, parentID});
 
-            at += entry->childNameLen;
+                at += entry->childNameLen;
+            }
         }
         if(filedata) free(filedata);
     }
@@ -326,14 +360,16 @@ void SSHInterface::getParameterValuesMinMax(const char *remoteDB, std::map<uint3
     {
         void *filedata = 0;
         size_t filesize;
-        readFile(&filedata, &filesize, "~/data.dat");
-
-        uint8_t *at = (uint8_t *)filedata;
-        while(at < (uint8_t *)filedata + filesize)
+        success = readFile(&filedata, &filesize, "~/data.dat");
+        if(success)
         {
-            parameter_min_max_val_serial_entry *entry = (parameter_min_max_val_serial_entry *)at;
-            IDtoParam[entry->ID] = *entry;
-            at += sizeof(parameter_min_max_val_serial_entry);
+            uint8_t *at = (uint8_t *)filedata;
+            while(at < (uint8_t *)filedata + filesize)
+            {
+                parameter_min_max_val_serial_entry *entry = (parameter_min_max_val_serial_entry *)at;
+                IDtoParam[entry->ID] = *entry;
+                at += sizeof(parameter_min_max_val_serial_entry);
+            }
         }
 
         if(filedata) free(filedata);
@@ -341,49 +377,58 @@ void SSHInterface::getParameterValuesMinMax(const char *remoteDB, std::map<uint3
 }
 
 
-void SSHInterface::getResultSets(const char *remoteDB, const QVector<int>& IDs, QVector<QVector<double>> &valuedata)
+bool SSHInterface::getResultSets(const char *remoteDB, const QVector<int>& IDs, QVector<QVector<double>> &valuedata)
 {
     bool success = runSqlHandler(EXPORT_RESULT_VALUES_COMMAND, remoteDB, "data.dat", &IDs);
 
     if(success)
     {
-        void *filedata;
+        void *filedata = 0;
         size_t filesize;
-        readFile(&filedata, &filesize, "~/data.dat");
-
-        uint8_t *data = (uint8_t *)filedata;
-        uint64_t numresults = *(uint64_t *)data;
-        data += sizeof(uint64_t);
-
-        //TODO: Better error handling
-        Q_ASSERT(sizeof(double)==8); //If this is not the case, someone has to write reformatting code for the data.
-
-        valuedata.resize((int)numresults);
-
-        //qDebug(QString::number((int)numresults).toLatin1().data());
-
-        for(int i = 0; i < numresults; ++i)
+        success = readFile(&filedata, &filesize, "~/data.dat");
+        if(success)
         {
-            //TODO: Check that we never overstep the filesize;
-            uint64_t count = *(uint64_t *)data;
+            uint8_t *data = (uint8_t *)filedata;
+            uint64_t numresults = *(uint64_t *)data;
             data += sizeof(uint64_t);
-            int cnt = (int)count;
 
-            //qDebug(QString::number(cnt).toLatin1().data());
-
-            QVector<double>& current = valuedata[i];
-            current.resize(cnt);
-
-            double *data_d = (double *)data;
-            for(int j = 0; j < cnt; ++j)
+            if((int)numresults == IDs.count())
             {
-                current[j] = *data_d++;
+                valuedata.resize((int)numresults);
+
+                //qDebug(QString::number((int)numresults).toLatin1().data());
+
+                for(int i = 0; i < numresults; ++i)
+                {
+                    //TODO: Check that we never overstep the filesize;
+                    uint64_t count = *(uint64_t *)data;
+                    data += sizeof(uint64_t);
+                    int cnt = (int)count;
+
+                    //qDebug(QString::number(cnt).toLatin1().data());
+
+                    QVector<double>& current = valuedata[i];
+                    current.resize(cnt);
+
+                    double *data_d = (double *)data;
+                    for(int j = 0; j < cnt; ++j)
+                    {
+                        current[j] = *data_d++;
+                    }
+                    data += cnt*sizeof(double);
+                }
             }
-            data += cnt*sizeof(double);
+            else
+            {
+                emit logError(QString("SSH: SQL: Requested %1 result sets, got %2").arg((int)numresults).arg(IDs.count()));
+                success = false;
+            }
         }
 
         if(filedata) free(filedata);
     }
+
+    return success;
 }
 
 
@@ -404,3 +449,130 @@ void SSHInterface::writeParameterValues(const char *remoteDB, QVector<parameter_
     if(success) runSqlHandler(IMPORT_PARAMETER_VALUES_COMMAND, remoteDB, "data.dat");
 }
 
+
+void SSHInterface::runINCA(const char *user, const char *address, const char *keyfile, QProgressBar *progressBar)
+{
+    //NOTE: We have to create a new SSH session in the new thread. Two different threads can not use the same session in libssh,
+    //or there is a risk of state corruption.
+
+    //TODO: Check that we are not already running a remote INCA process from this application. (Should not happen if the UI behaves correctly though).
+
+    SSHRunIncaWorker *worker = new SSHRunIncaWorker;
+    worker->moveToThread(&incaWorkerThread_);
+    connect(&incaWorkerThread_, &QThread::finished, worker, &QObject::deleteLater);
+    connect(worker, &SSHRunIncaWorker::resultReady, this, &SSHInterface::handleIncaFinished);
+    connect(worker, &SSHRunIncaWorker::tick, this, &SSHInterface::handleIncaTick);
+
+    //Relay logging signals
+    connect(worker, &SSHRunIncaWorker::log, this, &SSHInterface::log);
+    connect(worker, &SSHRunIncaWorker::reportError, this, &SSHInterface::handleRunINCAError);
+
+    progressBar_ = progressBar;
+    progressBar_->setVisible(true);
+    progressBar_->setMaximum(20); //TODO: Set to the correct amout of timesteps!
+
+    incaWorkerThread_.start();
+
+    worker->runINCA(user, address, keyfile);
+}
+
+
+void SSHInterface::handleIncaFinished()
+{
+    if(progressBar_)
+    {
+        progressBar_->setVisible(false);
+    }
+
+    emit runINCAFinished();
+}
+
+void SSHInterface::handleRunINCAError(const QString& message)
+{
+    //NOTE: Just relay the signal upwards...
+    emit runINCAError(message);
+}
+
+void SSHInterface::handleIncaTick(int ticknum)
+{
+    progressBar_->setValue(ticknum);
+}
+
+
+
+
+//--------------------------- SSHRunIncaWorker --------------------------------------------------------------------
+
+
+void SSHRunIncaWorker::runINCA(const char *user, const char *address, const char *keyfile)
+{
+    //NOTE: We have to create a new SSH session in the new thread. Two threads can not use the same session in libssh,
+    //or there is a risk of state corruption.
+    ssh_session inca_run_session = ssh_new();
+    if(!inca_run_session)
+    {
+        emit reportError("SSH: Failed to create session to start run of inca.");
+        return;
+    }
+
+    ssh_options_set(inca_run_session, SSH_OPTIONS_HOST, address);
+    ssh_options_set(inca_run_session, SSH_OPTIONS_USER, user);
+
+    int rc = ssh_connect(inca_run_session);
+    if(rc != SSH_OK)
+    {
+        emit reportError(QString("SSH: Failed to connect session: %1").arg(ssh_get_error(inca_run_session)));
+        return;
+    }
+
+    //NOTE: This registers the server as a known host on the local user computer. Should be ok to do this without any further checks since we only connect INCAView to servers we own?
+    ssh_write_knownhost(inca_run_session);
+
+    rc = ssh_userauth_privatekey_file(inca_run_session, 0, keyfile, 0);
+    if(rc != SSH_AUTH_SUCCESS)
+    {
+        emit reportError(QString("SSH: Failed to authenticate user: %1").arg(ssh_get_error(inca_run_session)));
+        ssh_free(inca_run_session);
+    }
+
+    //TODO: Optimize by holding channel open for later use once it is opened?
+    ssh_channel channel = ssh_channel_new(inca_run_session);
+    rc = ssh_channel_open_session(channel);
+    if(rc != SSH_OK)
+    {
+        emit reportError(QString("SSH: Failed to open channel: %1").arg(ssh_get_error(inca_run_session)));
+        ssh_free(inca_run_session);
+        return;
+    }
+
+    ssh_channel_request_exec(channel, "cd incaview;./core_hbv");
+
+    char readData[512];
+
+    int poll_rc;
+    while((poll_rc = ssh_channel_poll(channel, 0)) != SSH_EOF)
+    {
+        if(poll_rc == SSH_ERROR)
+        {
+            emit reportError(QString("SSH: Error while reading from INCA run channel: %1").arg(ssh_get_error(inca_run_session)));
+            break;
+        }
+
+        int rc = ssh_channel_read_nonblocking(channel, readData, sizeof(readData)-1, 0);
+        readData[rc] = 0;
+        if(rc > 0)
+        {
+            emit log(readData);
+            //TODO: When we have an inca model that prints out its timesteps, parse output and emit tick(timestep); to update the progress bar.
+        }
+    }
+
+    ssh_channel_send_eof(channel);
+    ssh_channel_close(channel);
+
+    ssh_channel_free(channel);
+    ssh_disconnect(inca_run_session);
+    ssh_free(inca_run_session);
+
+    emit resultReady();
+}
