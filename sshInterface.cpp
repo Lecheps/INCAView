@@ -2,6 +2,7 @@
 #include <QDebug>
 #include <QTime>
 
+
 SSHInterface::SSHInterface()
 {
     session_ = 0;
@@ -13,10 +14,21 @@ SSHInterface::SSHInterface()
     //NOTE: Initialization code is commented out for now since we don't have the libssh_threads.dll, and I don't know how to get/build it for MingW.
     //  It seems to work fine for now, but we should probably eventually get the dll to be safe.
     //ssh_threads_set_callbacks(ssh_threads_get_pthread()); //NOTE: QThread is supposedly based on pthread, so this should hopefully work!
-    //ssh_init();
+    ssh_init();
 
-    Q_ASSERT(sizeof(double)==8); //NOTE: If sizeof(double) != 8 on a potential user architecture, someone has to write reformatting code for the data.
-    Q_ASSERT(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__); //NOTE: If we are on a big endian user architecture, we also have to write reformatting code!
+    Q_ASSERT(sizeof(double)==8); //NOTE: If sizeof(double) != 8 on a potential user architecture, someone has to write reformatting code for the data. (Very unlikely)
+    Q_ASSERT(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__); //NOTE: If we are on a big endian user architecture, we also have to write reformatting code! (unlikely)
+
+    ssh_set_log_userdata(this);
+    ssh_set_log_level(SSH_LOG_WARNING);
+    //ssh_set_log_level(SSH_LOG_PACKET);
+    ssh_set_log_callback(SSHInterface::sshLogCallback);
+
+    //NOTE: We send a no-op to the server every 5 minutes to keep the session alive. This will hopefully stay the firewall from thinking
+    // it is dead and close it.
+    sendNoopTimer = new QTimer(this);
+    QObject::connect(sendNoopTimer, &QTimer::timeout, this, &SSHInterface::sendNoop);
+    sendNoopTimer->start(1000*60*5);
 }
 
 SSHInterface::~SSHInterface()
@@ -27,6 +39,23 @@ SSHInterface::~SSHInterface()
 
     incaWorkerThread_.quit();
     incaWorkerThread_.wait();
+
+    if(isSessionConnected())
+    {
+       disconnectSession(); //NOTE: This is for the main session. It will not close the INCARun session.
+    }
+}
+
+void SSHInterface::sshLogCallback(int priority, const char *function, const char *buffer, void *data)
+{
+    //SSHInterface *caller = (SSHInterface *)data;
+
+    qDebug() << "SSH (priority " << priority << ") " << buffer;
+}
+
+void SSHInterface::sshStatusCallback(void *data, float status)
+{
+    qDebug() << "SSH status: " << status;
 }
 
 bool SSHInterface::connectSession(const char *user, const char *address, const char *keyfile)
@@ -48,6 +77,9 @@ bool SSHInterface::connectSession(const char *user, const char *address, const c
         {
             ssh_options_set(session_, SSH_OPTIONS_HOST, address);
             ssh_options_set(session_, SSH_OPTIONS_USER, user);
+            long timeoutSeconds = 1;
+            ssh_options_set(session_, SSH_OPTIONS_TIMEOUT, &timeoutSeconds);
+            //ssh_options_set(session_, SSH_OPTIONS_STATUS_CALLBACK, SSHInterface::sshStatusCallback); //HMM: does not seem to exist in the latest mingw binary version. We could get it by compiling the library ourselves.
 
             int rc = ssh_connect(session_);
             if(rc != SSH_OK)
@@ -56,7 +88,7 @@ bool SSHInterface::connectSession(const char *user, const char *address, const c
             }
             else
             {
-                //NOTE: This registers the server as a known host on the local user computer. Should be ok to do this without any further checks since we only connect INCAView to servers we own?
+                //NOTE: This registers the server as a known host on the local user computer. It should be ok to do this without any further checks since we only connect INCAView to servers we own?
                 ssh_write_knownhost(session_);
 
                 rc = ssh_userauth_privatekey_file(session_, 0, keyfile, 0);
@@ -90,19 +122,22 @@ bool SSHInterface::isSessionConnected()
     bool connected = false;
     if(session_)
     {
-        //TODO: If the session is idle for a few minutes there is an error where this returns true, but when one tries to open a channel it fails with an "unknown error",
-        //  and then the session is disconnected.
+        //TODO: If the session is idle for a few minutes there is an error where ssh_is_connected returns true, but when one tries to open a channel it fails with a
+        //  Socket exception callback (2) 10053, (See also https://wiki.pscs.co.uk/how_to:10053)
+        //  and then the session is disconnected. This can be a problem with the google compute engine servers shutting down the connection, but can also be related to which network the user is on.
+        //  I have not been able to trace down the cause.
+        //  If there is no way to permanently solve it, we need some way to catch this problem and reconnect without the program stalling for too long, the problem right now is that
+        //  we have no way to catch it before we try to open a console or send a command in the console, at which point the program hangs for several seconds.
         connected = ssh_is_connected(session_);
-
-        //TODO: We should think about whether or not it is ok to do this here!
-        if(!connected)
-        {
-            const char *message = ssh_get_disconnect_message(session_);
-            if(!message) message = ssh_get_error(session_);
-            emit sessionWasDisconnected(message);
-        }
     }
     return connected;
+}
+
+const char * SSHInterface::getDisconnectionMessage()
+{
+    const char *message = ssh_get_disconnect_message(session_);
+    if(!message) message = ssh_get_error(session_);
+    return message;
 }
 
 bool SSHInterface::runCommand(const char *command, char *resultbuffer, int bufferlen)
@@ -498,7 +533,26 @@ void SSHInterface::handleIncaTick(int ticknum)
     progressBar_->setValue(ticknum);
 }
 
+void SSHInterface::sendNoop()
+{
+    qDebug() << "No-op";
 
+    //NOTE: This function is supposed to be called in a regular interval so that the session is not idle
+    // for too long.
+    //TODO: Since this is called by the timer, what happens if we are doing someting with the session at
+    // the same time?? Do we need to set a lock while using the session that prevents this from being called?
+
+    if(session_)
+    {
+        const char *ignorethismessageplease = "No-op";
+        int rc = ssh_send_ignore(session_, ignorethismessageplease);
+        if(rc == SSH_ERROR)
+        {
+            //TODO: This is bad, at least if we expected to be connected. Figure out how to handle it
+            qDebug() << "No-op caused error";
+        }
+    }
+}
 
 
 //--------------------------- SSHRunIncaWorker --------------------------------------------------------------------
@@ -557,6 +611,9 @@ void SSHRunIncaWorker::runINCA(const char *user, const char *address, const char
             emit reportError(QString("SSH: Error while reading from INCA run channel: %1").arg(ssh_get_error(inca_run_session)));
             break;
         }
+
+        //TODO: Check that this sleep works correctly!
+        QThread::msleep(50);
 
         int rc = ssh_channel_read_nonblocking(channel, readData, sizeof(readData)-1, 0);
         readData[rc] = 0;

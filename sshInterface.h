@@ -7,6 +7,7 @@
 #include "treemodel.h"
 #include <QThread>
 #include <QProgressBar>
+#include <QTimer>
 
 //NOTE: we have to define these if we are not on Linux.
 #ifndef S_IRWXU
@@ -48,16 +49,24 @@ public:
     void writeParameterValues(const char *remoteDB, QVector<parameter_serial_entry>& writedata);
     bool getResultSets(const char *remoteDB, const QVector<int>& IDs, QVector<QVector<double>> &valuedata);
 
+    const char * getDisconnectionMessage();
 
     void runINCA(const char *user, const char *address, const char *keyfile, QProgressBar *progressBar);
     void handleIncaFinished();
     void handleIncaTick(int);
     void handleRunINCAError(const QString&);
 
+    void sendNoop();
+
+
+    static void sshLogCallback(int priority, const char *function, const char *buffer, void *data);
+    static void sshStatusCallback(void *data, float status);
+
 private:
     ssh_session session_;
     QThread incaWorkerThread_;
     QProgressBar *progressBar_;
+    QTimer *sendNoopTimer;
 
     bool runCommand(const char *command, char *resultbuffer, int bufferlen);
     bool writeFile(const void *contents, size_t contentssize, const char *remotelocation, const char *remotefilename);

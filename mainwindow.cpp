@@ -65,10 +65,10 @@ MainWindow::MainWindow(QWidget *parent) :
     QObject::connect(ui->widgetPlotResults, QCustomPlot::mouseMove, this, &MainWindow::updateGraphToolTip);
 
     QObject::connect(&sshInterface_, &SSHInterface::log, this, &MainWindow::log);
-    QObject::connect(&sshInterface_, &SSHInterface::logError, this, &MainWindow::logError);
+    QObject::connect(&sshInterface_, &SSHInterface::logError, this, &MainWindow::logSSHError);
     QObject::connect(&sshInterface_, &SSHInterface::runINCAFinished, this, &MainWindow::onRunINCAFinished);
     QObject::connect(&sshInterface_, &SSHInterface::runINCAError, this, &MainWindow::handleRunINCAError);
-    QObject::connect(&sshInterface_, &SSHInterface::sessionWasDisconnected, this, &MainWindow::handleSSHDisconnect);
+    //QObject::connect(&sshInterface_, &SSHInterface::sessionWasDisconnected, this, &MainWindow::handleSSHDisconnect); //NOTE: This is not used at the moment since we don't have a reliable way for getting a message on disconnect
 
     ui->progressBarRunInca->setVisible(false);
 
@@ -91,6 +91,19 @@ void MainWindow::logError(const QString& Message)
     ui->tabWidget->setCurrentIndex(1);
     log("<font color=red>" + Message + "</font>");
 }
+
+
+void MainWindow::logSSHError(const QString& message)
+{
+    logError(message);
+    if(!sshInterface_.isSessionConnected())
+    {
+        const char *disconnectionMessage = sshInterface_.getDisconnectionMessage();
+        logError(QString("SSH Disconnected:") + disconnectionMessage);
+        handleSSHDisconnect();
+    }
+}
+
 
 void MainWindow::resetWindowTitle()
 {
@@ -115,7 +128,7 @@ void MainWindow::on_pushConnect_clicked()
     //TODO: Query the user about these
     serverAddress_ = "35.230.143.177";
     remoteUsername_ = "magnus";
-    remoteDBpath_ = "incaview/test.db";
+    remoteDBpath_ = "incaview/persist.db";
     keyPath_ = "C:\\testkeys\\magnusKey";
 
     log(QString("Attempting to connect to ") + serverAddress_ + " ...");
@@ -169,6 +182,7 @@ void MainWindow::on_pushConnect_clicked()
         QObject::connect(parameterModel_, &ParameterModel::parameterWasEdited, this, &MainWindow::parameterWasEdited);
         QObject::connect(ui->treeViewParameters->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateParameterView);
         QObject::connect(ui->treeViewResults->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateGraphsAndResultSummary);
+        QObject::connect(ui->tableViewParameters, &QTableView::clicked, parameterModel_, &ParameterModel::handleClick);
 
         //NOTE: this is to mark that the x axis is uninitialized so that it can be initialized later. TODO: is there a better way to do it?
         ui->widgetPlotResults->xAxis->setRange(0.0, 0.1);
@@ -182,10 +196,8 @@ void MainWindow::on_pushConnect_clicked()
 }
 
 
-void MainWindow::handleSSHDisconnect(const QString& message)
+void MainWindow::handleSSHDisconnect()
 {
-    logError("SSH: Session was disconnected: " + message);
-
     ui->pushRun->setEnabled(false);
 
     ui->radioButtonDaily->setEnabled(false);
@@ -225,7 +237,7 @@ void MainWindow::on_pushRun_clicked()
     }
     else
     {
-        logError("Attempted to run INCA while the session is disconnected. This should not be possible since the run button should be disabled...");
+        handleSSHDisconnect();
     }
 }
 
@@ -310,11 +322,14 @@ void MainWindow::updateGraphsAndResultSummary()
         QVector<int> IDs;
         for(auto index : indexes)
         {
-            auto idx = index.model()->index(index.row(),index.column() + 1, index.parent());
-            int ID = (treeResults_->itemData(idx))[0].toInt();
-            if(index.column() == 0 && ID != 0 && treeResults_->childCount(ID) == 0) //NOTE: If it has children in the tree, it is an indexer, not a result series.
+            if(index.column() == 0)
             {
-                IDs.push_back(ID);
+                auto idx = index.model()->index(index.row(),index.column() + 1, index.parent());
+                int ID = (treeResults_->itemData(idx))[0].toInt();
+                if( ID != 0 && treeResults_->childCount(ID) == 0) //NOTE: If it has children in the tree, it is an indexer, not a result series.
+                {
+                    IDs.push_back(ID);
+                }
             }
         }
 
@@ -482,6 +497,10 @@ void MainWindow::updateGraphsAndResultSummary()
 
         ui->widgetPlotResults->replot();
         updateGraphToolTip(0); // Clear the graph tooltip.
+    }
+    else
+    {
+        handleSSHDisconnect();
     }
 }
 

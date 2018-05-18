@@ -42,16 +42,16 @@ private slots:
     void undo(bool);
     void updateGraphToolTip(QMouseEvent *event);
     void parameterWasEdited(ParameterEditAction);
-    void handleSSHDisconnect(const QString& message);
+    void handleSSHDisconnect();
     void onRunINCAFinished();
     void handleRunINCAError(const QString&);
 
     void log(const QString &);
     void logError(const QString &);
+    void logSSHError(const QString&);
 
 private:
 
-    //void populateParameterModel(ParameterModel*);
     void populateTreeModelResults(TreeModel*);
     void populateParameterModels(TreeModel*, ParameterModel*);
 

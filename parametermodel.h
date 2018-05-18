@@ -32,7 +32,12 @@ public:
 
     void serializeParameterData(QVector<parameter_serial_entry> &outdata);
 
+    void handleClick(const QModelIndex &index);
+
     void setValue(int, parameter_value&); //NOTE: this is only to be used by the MainWindow's undo function
+
+    parameter_type getTypeOfRow(int row); //NOTE: this is only to be used by the LineEditDelegate
+    parameter_value getRawValue(int row); //NOTE: this is only to be used by the LineEditDelegate
 private:
     std::vector<int> visibleParamID_;
     std::map<int, Parameter*> IDtoParam_;

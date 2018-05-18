@@ -5,7 +5,6 @@
 ParameterModel::ParameterModel(QObject *parent)
     :QAbstractTableModel(parent)
 {
-
 }
 
 ParameterModel::~ParameterModel()
@@ -121,12 +120,44 @@ bool ParameterModel::setData(const QModelIndex & index, const QVariant & value, 
         {
             int ID = visibleParamID_[index.row()];
             Parameter* param = IDtoParam_.at(ID);
-            QString strVal = value.toString();
-            bool valid = param->isValidValue(strVal);
+            bool valid = false;
+            QString strVal;
+            int64_t timeVal;
+            uint64_t boolVal;
+            if(param->type == parametertype_ptime)
+            {
+                timeVal = value.toLongLong();
+                valid = true; // All integer values represent a valid date.
+            }
+            else if(param->type == parametertype_bool)
+            {
+                boolVal = value.toULongLong();
+                valid = true; // We control what is passed here, so it is valid.
+            }
+            else
+            {
+                strVal = value.toString();
+                valid = param->isValidValue(strVal);
+            }
+
             if(valid)
             {
                 parameter_value oldVal = param->value;
-                bool valueWasChanged = param->setValue(strVal);
+                bool valueWasChanged = false;
+                if(param->type == parametertype_ptime)
+                {
+                    valueWasChanged = timeVal == param->value.val_ptime;
+                    param->value.val_ptime = timeVal;
+                }
+                else if(param->type == parametertype_bool)
+                {
+                    valueWasChanged = true; //Since this is a toggle, the value was always changed..
+                    param->value.val_bool = boolVal;
+                }
+                else
+                {
+                    valueWasChanged = param->setValue(strVal);
+                }
 
                 if(valueWasChanged)
                 {
@@ -146,6 +177,16 @@ bool ParameterModel::setData(const QModelIndex & index, const QVariant & value, 
         }
     }
     return true;
+}
+
+void ParameterModel::handleClick(const QModelIndex &index)
+{
+    //NOTE: we override editing for bool types so that click == toggle.
+    if(index.column() == 1 && getTypeOfRow(index.row()) == parametertype_bool)
+    {
+        parameter_value oldVal = getRawValue(index.row());
+        setData(index, QVariant((qulonglong)!oldVal.val_bool), Qt::EditRole);
+    }
 }
 
 Qt::ItemFlags ParameterModel::flags(const QModelIndex &index) const
@@ -203,6 +244,21 @@ void ParameterModel::setChildrenVisible(int parentID)
         }
     }
 }
+
+//NOTE: this should only be used by the LineEditDelegate (or by this class itself)
+parameter_type ParameterModel::getTypeOfRow(int row)
+{
+    int ID = visibleParamID_[row];
+    return IDtoParam_[ID]->type;
+}
+
+//NOTE: this should only be used by the LineEditDelegate (or by this class itself)
+parameter_value ParameterModel::getRawValue(int row)
+{
+    int ID = visibleParamID_[row];
+    return IDtoParam_[ID]->value;
+}
+
 
 //NOTE! this is only to be used by the MainWindow's undo function
 void ParameterModel::setValue(int ID, parameter_value& value)
