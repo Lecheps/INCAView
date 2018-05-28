@@ -4,12 +4,12 @@
 #include <QStyledItemDelegate>
 #include <QLineEdit>
 
-class LineEditDelegate : public QStyledItemDelegate
+class ParameterEditDelegate : public QStyledItemDelegate
 {
     Q_OBJECT
 
 public:
-    LineEditDelegate(QObject *parent = 0);
+    ParameterEditDelegate(QObject *parent = 0);
 
     QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &option,
                           const QModelIndex &index) const override;

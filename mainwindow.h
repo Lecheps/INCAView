@@ -4,7 +4,7 @@
 #include "sshInterface.h"
 #include "treemodel.h"
 #include "parametermodel.h"
-#include "lineeditdelegate.h"
+#include "parametereditdelegate.h"
 #include <QMainWindow>
 #include "QtCore"
 #include "QtGui"
@@ -71,7 +71,7 @@ private:
     TreeModel *treeParameters_, *treeResults_;
 
     ParameterModel *parameterModel_;
-    LineEditDelegate *lineEditDelegate;
+    ParameterEditDelegate *lineEditDelegate;
 
     const char *serverAddress_;
     const char *remoteUsername_;

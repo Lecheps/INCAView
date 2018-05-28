@@ -303,10 +303,39 @@ bool import_parameter_values(sqlite3 *db, FILE *file)
 		fread(&entry, sizeof(parameter_serial_entry), 1, file);
 		
 		char valuestring[64];
+		
+		//TODO: instead of setting these using a string, we could bind the values directly to the query.
 		print_parameter_value(valuestring, &entry);
 		
 		char sqlcommand[512];
-		sprintf(sqlcommand, "UPDATE ParameterValues SET value = %s WHERE ID = %u;", valuestring, entry.ID);
+		switch(entry.type)
+		{
+			case parametertype_double:
+			{
+				sprintf(sqlcommand, "UPDATE ParameterValues_double SET value = %s WHERE ID = %u;", valuestring, entry.ID);
+			} break;
+			
+			case parametertype_bool:
+			{
+				sprintf(sqlcommand, "UPDATE ParameterValues_bool SET value = %s WHERE ID = %u;", valuestring, entry.ID);
+			} break;
+			
+			case parametertype_uint:
+			{
+				sprintf(sqlcommand, "UPDATE ParameterValues_int SET value = %s WHERE ID = %u;", valuestring, entry.ID);
+			} break;
+			
+			case parametertype_ptime:
+			{
+				sprintf(sqlcommand, "UPDATE ParameterValues_ptime SET value = %s WHERE ID = %u;", valuestring, entry.ID);
+			} break;
+			
+			default:
+			{
+				fprintf(stdout, "ERROR: Received unknown parameter type for parameter with ID %d", entry.ID);
+				return false;
+			} break;
+		}
 		//fprintf(stdout, sqlcommand);
 		
 		char *errmsg;

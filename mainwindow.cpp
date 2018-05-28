@@ -33,7 +33,7 @@ MainWindow::MainWindow(QWidget *parent) :
     resetWindowTitle();
 
     //NOTE: the lineeditdelegate is used by the tableviewparameters to provide an input widget when editing parameter values.
-    lineEditDelegate = new LineEditDelegate();
+    lineEditDelegate = new ParameterEditDelegate();
     ui->tableViewParameters->setItemDelegateForColumn(1, lineEditDelegate);
     ui->tableViewParameters->verticalHeader()->hide();
     ui->tableViewParameters->setEditTriggers(QAbstractItemView::AllEditTriggers);
@@ -68,11 +68,10 @@ MainWindow::MainWindow(QWidget *parent) :
     QObject::connect(&sshInterface_, &SSHInterface::logError, this, &MainWindow::logSSHError);
     QObject::connect(&sshInterface_, &SSHInterface::runINCAFinished, this, &MainWindow::onRunINCAFinished);
     QObject::connect(&sshInterface_, &SSHInterface::runINCAError, this, &MainWindow::handleRunINCAError);
-    //QObject::connect(&sshInterface_, &SSHInterface::sessionWasDisconnected, this, &MainWindow::handleSSHDisconnect); //NOTE: This is not used at the moment since we don't have a reliable way for getting a message on disconnect
 
     ui->progressBarRunInca->setVisible(false);
 
-    //qDebug(QDir::currentPath().toLatin1().data());
+    //qDebug() << QDir::currentPath();
 }
 
 MainWindow::~MainWindow()
@@ -126,7 +125,7 @@ void MainWindow::on_pushConnect_clicked()
     ui->pushConnect->setEnabled(false);
 
     //TODO: Query the user about these
-    serverAddress_ = "35.230.143.177";
+    serverAddress_ = "35.189.102.186";
     remoteUsername_ = "magnus";
     remoteDBpath_ = "incaview/persist.db";
     keyPath_ = "C:\\testkeys\\magnusKey";
@@ -135,15 +134,13 @@ void MainWindow::on_pushConnect_clicked()
 
     bool success = sshInterface_.connectSession(remoteUsername_, serverAddress_, keyPath_);
 
-    //TODO: Try to make it so that the program does not crash or stall for too long if the connection times out or is unsuccessful!
-
     if(success)
     {
         log("Connection successful");
 
 
         //NOTE: In case we connected previously, then disconnected for some reason, and reconnect now:
-        //TODO: Instead of doing this we may want to keep the state of the parameter model and allow the user to use that if they reconnect!
+        //TODO: Instead of doing this we may want to keep the state of the parametermodel and allow the user to use that if they reconnect!
         //  (However, then we need to check that they reconnected to the same server+database)
         {
             if(treeParameters_) delete treeParameters_;
@@ -160,11 +157,15 @@ void MainWindow::on_pushConnect_clicked()
         ui->radioButtonMonthlyAverages->setEnabled(true);
         ui->radioButtonYearlyAverages->setEnabled(true);
 
+        log("Loading parameter and results structures...");
+
         resetWindowTitle();
 
         parameterModel_ = new ParameterModel();
         treeParameters_ = new TreeModel("Parameter Structure");
         treeResults_ = new TreeModel("Results Structure");
+
+        //TODO: Just in case something goes wrong when loading from the ssh here, we should really do some more error handling.
         populateParameterModels(treeParameters_, parameterModel_);
         populateTreeModelResults(treeResults_);
 
@@ -187,11 +188,14 @@ void MainWindow::on_pushConnect_clicked()
         //NOTE: this is to mark that the x axis is uninitialized so that it can be initialized later. TODO: is there a better way to do it?
         ui->widgetPlotResults->xAxis->setRange(0.0, 0.1);
 
+        log("Loading complete");
         //updateGraphsAndResultSummary();
     }
     else
     {
-        //NOTE: SSH errors are handled elsewhere.
+        //NOTE: SSH errors are reported to the log elsewhere.
+
+        ui->pushConnect->setEnabled(true);
     }
 }
 
@@ -206,7 +210,8 @@ void MainWindow::handleSSHDisconnect()
 
     //resetWindowTitle(); //NOTE: Currently this would cause an infinite loop since it can cause the ssh disconnect signal to be emitted again..
 
-    //TODO: We need to decide what we to to the state of the parameter model and tree models.
+    //TODO: We need to decide what we want to to the state of the parameter model and tree models.
+    // Note however that the involuntary disconnect is now very unlikely since we fixed the timeout bug.
 
     ui->pushConnect->setEnabled(true);
 }
@@ -241,14 +246,61 @@ void MainWindow::on_pushRun_clicked()
     }
 }
 
+void MainWindow::runINCA()
+{
+    ui->pushRun->setEnabled(false);
+    toggleStuffHasBeenEditedSinceLastSave(false);
+    log("Attempting to run INCA...");
+
+    //Serialize parameter values and send them to the remote database
+    QVector<parameter_serial_entry> parameterdata;
+    parameterModel_->serializeParameterData(parameterdata);
+    sshInterface_.writeParameterValues(remoteDBpath_, parameterdata);
+
+    if(parameterModel_->timestepsLoaded_)
+    {
+        //TODO: Find out if the parameter called "Timesteps" is actually used to set up the number of timesteps when the model is run!
+        //   Otherwise we need to get the correct number of timesteps in a different way.
+        //TODO: We should retrieve the latest edited value for timesteps here (or update it in the parametermodel when it receives an edit).
+        ui->progressBarRunInca->setMaximum(parameterModel_->timesteps_);
+    }
+    else
+    {
+        //TODO: What do we do?
+    }
+
+    //NOTE: Currently set up to use a wrong model..
+    sshInterface_.runINCA(remoteUsername_, serverAddress_, keyPath_, ui->progressBarRunInca);
+}
+
+void MainWindow::onRunINCAFinished()
+{
+    //NOTE: this is a slot that receives a signal from the sshInterface.
+
+    log("INCA run finished.");
+    updateGraphsAndResultSummary();
+    ui->pushRun->setEnabled(true);
+
+    //TODO: We need to reset the recorded start date in the parameter model (not the one stored in the parameter list, but the one stored separately).
+}
+
+void MainWindow::handleRunINCAError(const QString& message)
+{
+    //NOTE: this is a slot that receives a signal from the sshInterface.
+
+    logError(message);
+
+    //TODO: cleanup
+}
+
 void MainWindow::closeEvent (QCloseEvent *event)
 {
-    //TODO: Make this functionality work with the new system.
-    /*
+    //TODO: Make some better functionality for saving parameters.
+
     if(stuffHasBeenEditedSinceLastSave)
     {
         QMessageBox::StandardButton resBtn = QMessageBox::question( this, tr("Closing INCA view without saving."),
-                                                                    tr("Do you want to exit without saving the changes made to the database?\n"),
+                                                                    tr("If you close INCAview without running the model at least once, your changes to the parameters will not be stored. Do you still want to close?\n"),
                                                                     QMessageBox::Yes | QMessageBox::No ,
                                                                     QMessageBox::Yes);
         if (resBtn != QMessageBox::Yes) {
@@ -257,37 +309,6 @@ void MainWindow::closeEvent (QCloseEvent *event)
             event->accept();
         }
     }
-    */
-}
-
-void MainWindow::runINCA()
-{
-    ui->pushRun->setEnabled(false);
-    toggleStuffHasBeenEditedSinceLastSave(false);
-    log("Attempting to run INCA...");
-
-    //Serialize parameters and send them to the remote database
-    QVector<parameter_serial_entry> parameterdata;
-    parameterModel_->serializeParameterData(parameterdata);
-    sshInterface_.writeParameterValues(remoteDBpath_, parameterdata);
-
-    sshInterface_.runINCA(remoteUsername_, serverAddress_, keyPath_, ui->progressBarRunInca);
-}
-
-void MainWindow::onRunINCAFinished()
-{
-    //TODO: Receive an error code here if something went wrong, and clean up accordingly.
-
-    log("INCA run finished.");
-    updateGraphsAndResultSummary();
-    ui->pushRun->setEnabled(true);
-}
-
-void MainWindow::handleRunINCAError(const QString& message)
-{
-    logError(message);
-
-    //TODO: cleanup
 }
 
 void MainWindow::updateParameterView(const QItemSelection& selected, const QItemSelection& deselected)
@@ -297,7 +318,8 @@ void MainWindow::updateParameterView(const QItemSelection& selected, const QItem
     QModelIndexList indexes = selected.indexes();
     if(indexes.count() >= 1)
     {
-        // The selection mode for this view is configured so that we can only select one row at the time. The first item in indexes points to the name, the second to the ID.
+        // NOTE: The selection mode for this view is configured so that we can only select one row at the time.
+        //    The first item in indexes points to the name, the second to the ID.
         QModelIndex index = indexes[1];
         int ID = treeParameters_->data(index).toInt();
 
@@ -326,7 +348,7 @@ void MainWindow::updateGraphsAndResultSummary()
             {
                 auto idx = index.model()->index(index.row(),index.column() + 1, index.parent());
                 int ID = (treeResults_->itemData(idx))[0].toInt();
-                if( ID != 0 && treeResults_->childCount(ID) == 0) //NOTE: If it has children in the tree, it is an indexer, not a result series.
+                if( ID != 0 && treeResults_->childCount(ID) == 0) //NOTE: If it has children in the tree, it is an indexer or index, not a result series.
                 {
                     IDs.push_back(ID);
                 }
@@ -350,10 +372,19 @@ void MainWindow::updateGraphsAndResultSummary()
 
                     //qDebug(QString::number(cnt).toLatin1().data());
 
-                    //TODO: These time values are just for debugging!!! We should read actual time values from the model output.
-                    auto startdate = QDateTime::currentDateTime();
-                    startdate = QDateTime(startdate.date()); //Remove hours, minutes, seconds
-                    uint starttime = startdate.toTime_t();
+                    int64_t starttime;
+                    if(parameterModel_->startDateLoaded_)
+                    {
+                        starttime = parameterModel_->startDate_;
+                    }
+                    else
+                    {
+                        //NOTE: Do we really want to use the current time here, or should we do something else to the x axis?
+                        QDateTime startdate = QDateTime::currentDateTime();
+                        startdate = QDateTime(startdate.date()); //Remove hours, minutes, seconds
+                        starttime = startdate.toSecsSinceEpoch();
+                    }
+
                     double min = std::numeric_limits<double>::max();
                     double max = std::numeric_limits<double>::min();
 
@@ -508,9 +539,10 @@ void MainWindow::updateGraphsAndResultSummary()
 void MainWindow::updateGraphToolTip(QMouseEvent *event)
 {
     //NOTE: this is for changing the labelGraphValues label to print the values of the visible graphs when the mouse hovers over them. Not really a tooltip. Better name?
+
     if(event && ui->widgetPlotResults->graphCount() > 0)
     {
-        uint x = (uint)ui->widgetPlotResults->xAxis->pixelToCoord(event->pos().x());
+        double x = ui->widgetPlotResults->xAxis->pixelToCoord(event->pos().x());
 
         QModelIndexList indexes = ui->treeViewResults->selectionModel()->selectedIndexes();
         QString valueString= "";
@@ -521,15 +553,20 @@ void MainWindow::updateGraphToolTip(QMouseEvent *event)
             else valueString.append("\n");
 
             QCPGraph *graph = ui->widgetPlotResults->graph(i);
-            double value = graph->data()->findBegin((double)x)->value;
+            double value = graph->data()->findBegin(x)->value;
 
             int ID = indexes[2*i + 1].data().toInt();
             valueString.append(treeResults_->getName(ID)).append(" (").append(treeResults_->getParentName(ID)).append("): ");
 
-            valueString.append(QString::number(value, 'g', 5));
+            bool foundrange;
+            QCPRange range = graph->getKeyRange(foundrange);
+            if(foundrange && range.contains(x))
+                valueString.append(QString::number(value, 'g', 5));
+            else
+                valueString.append("Date out of range");
         }
 
-        QDateTime date = QDateTime::fromTime_t(x);
+        QDateTime date = QDateTime::fromSecsSinceEpoch((int64_t)x);
         QString dateString;
         if(ui->radioButtonYearlyAverages->isChecked())
             dateString = QLocale().toString(date, "yyyy").append(" yearly average");
@@ -553,19 +590,23 @@ void MainWindow::populateParameterModels(TreeModel* treemodel, ParameterModel *p
 
     QVector<TreeData> structuredata;
     sshInterface_.getParameterStructure(remoteDBpath_, structuredata);
-    for(TreeData& item : structuredata)
+    for(TreeData& data : structuredata)
     {
-        auto parref = IDtoParam.find(item.ID);
+        auto parref = IDtoParam.find(data.ID);
         if(parref == IDtoParam.end())
         {
             //This ID corresponds to something that does not have a value (i.e. an indexer), and so we add it to the tree structure.
-            treemodel->addItem(item);
+            treemodel->addItem(data);
         }
         else
         {
             //This ID corresponds to something that has a value (i.e. a parameter), and so we add it to the parameter model.
             parameter_min_max_val_serial_entry& par = parref->second;
-            parametermodel->addParameter(item.name, item.ID, item.parentID, par);
+            parametermodel->addParameter(data.name, data.ID, data.parentID, par);
+            if(data.name == "Timesteps")
+            {
+
+            }
         }
     }
 }

@@ -20,8 +20,8 @@ SOURCES += main.cpp\
     qcustomplot.cpp \
     parameter.cpp \
     parametermodel.cpp \
-    lineeditdelegate.cpp \
-    sshInterface.cpp
+    sshInterface.cpp \
+    parametereditdelegate.cpp
 
 HEADERS  += mainwindow.h \
     treemodel.h \
@@ -29,9 +29,9 @@ HEADERS  += mainwindow.h \
     qcustomplot.h \
     parameter.h \
     parametermodel.h \
-    lineeditdelegate.h \
     sshInterface.h \
-    sqlhandler/parameterserialization.h
+    sqlhandler/parameterserialization.h \
+    parametereditdelegate.h
 
 FORMS    += mainwindow.ui
 

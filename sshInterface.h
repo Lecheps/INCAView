@@ -16,7 +16,7 @@
     #define	S_IWUSR	0000200
 #endif
 
-//NOTE: SSHRunIncaWorker is for calling and monitoring the output of INCA
+//NOTE: SSHRunIncaWorker is used for calling and monitoring the output of INCA
 //in a separate thread while the rest of the program continues its business.
 class SSHRunIncaWorker : public QObject
 {
@@ -24,11 +24,15 @@ class SSHRunIncaWorker : public QObject
 
 public:
     void runINCA(const char *, const char *, const char *);
+    virtual ~SSHRunIncaWorker();
 signals:
     void tick(int);
     void resultReady();
     void log(const QString&);
     void reportError(const QString&);
+private:
+    ssh_session inca_run_session;
+    ssh_channel inca_run_channel;
 };
 
 class SSHInterface : public QObject
@@ -79,7 +83,6 @@ signals:
     void logError(const QString&);
     void runINCAFinished();
     void runINCAError(const QString&);
-    void sessionWasDisconnected(const QString&);
 };
 
 #endif // SSHTEST_H

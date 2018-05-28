@@ -1,6 +1,8 @@
 #include "parametermodel.h"
 #include <QFont>
 #include <QBrush>
+#include <QDebug>
+#include <QDateTime>
 
 ParameterModel::ParameterModel(QObject *parent)
     :QAbstractTableModel(parent)
@@ -132,7 +134,7 @@ bool ParameterModel::setData(const QModelIndex & index, const QVariant & value, 
             else if(param->type == parametertype_bool)
             {
                 boolVal = value.toULongLong();
-                valid = true; // We control what is passed here, so it is valid.
+                valid = true; // We control what is passed here, so it should be valid.
             }
             else
             {
@@ -151,7 +153,7 @@ bool ParameterModel::setData(const QModelIndex & index, const QVariant & value, 
                 }
                 else if(param->type == parametertype_bool)
                 {
-                    valueWasChanged = true; //Since this is a toggle, the value was always changed..
+                    valueWasChanged = true; //Since editing bools is always a toggle, the value was changed..
                     param->value.val_bool = boolVal;
                 }
                 else
@@ -181,11 +183,13 @@ bool ParameterModel::setData(const QModelIndex & index, const QVariant & value, 
 
 void ParameterModel::handleClick(const QModelIndex &index)
 {
-    //NOTE: we override editing for bool types so that click == toggle.
+    //NOTE: we override editing for bool types so that click means a toggle of the value.
     if(index.column() == 1 && getTypeOfRow(index.row()) == parametertype_bool)
     {
+        //qDebug() << "click";
         parameter_value oldVal = getRawValue(index.row());
         setData(index, QVariant((qulonglong)!oldVal.val_bool), Qt::EditRole);
+        emit dataChanged(index, index); //NOTE: this is to signal the view to update, otherwise there is a small lag.
     }
 }
 
@@ -217,6 +221,17 @@ void ParameterModel::addParameter(const QString& name, int ID, int parentID, con
 {
     Parameter *param = new Parameter(name, ID, parentID, entry);
     IDtoParam_[ID] = param;
+    //TODO: Do we really want to rely on case sensitive names here? Alternative?
+    if(!timestepsLoaded_ && name == "Timesteps")
+    {
+        timestepsLoaded_ = true;
+        timesteps_ = entry.value.val_uint;
+    }
+    if(!startDateLoaded_ && name == "Start date" )
+    {
+        startDateLoaded_ = true;
+        startDate_ = entry.value.val_ptime;
+    }
 }
 
 void ParameterModel::clearVisibleParameters()
@@ -246,17 +261,17 @@ void ParameterModel::setChildrenVisible(int parentID)
 }
 
 //NOTE: this should only be used by the LineEditDelegate (or by this class itself)
-parameter_type ParameterModel::getTypeOfRow(int row)
+parameter_type ParameterModel::getTypeOfRow(int row) const
 {
     int ID = visibleParamID_[row];
-    return IDtoParam_[ID]->type;
+    return IDtoParam_.at(ID)->type;
 }
 
 //NOTE: this should only be used by the LineEditDelegate (or by this class itself)
-parameter_value ParameterModel::getRawValue(int row)
+parameter_value ParameterModel::getRawValue(int row) const
 {
     int ID = visibleParamID_[row];
-    return IDtoParam_[ID]->value;
+    return IDtoParam_.at(ID)->value;
 }
 
 

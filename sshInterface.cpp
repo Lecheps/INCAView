@@ -2,6 +2,7 @@
 #include <QDebug>
 #include <QTime>
 
+//NOTE: Useful blog post on using QThread: https://mayaposch.wordpress.com/2011/11/01/how-to-really-truly-use-qthreads-the-full-explanation/
 
 SSHInterface::SSHInterface()
 {
@@ -33,16 +34,12 @@ SSHInterface::SSHInterface()
 
 SSHInterface::~SSHInterface()
 {
-    //TODO: If we are running an INCA process via SSH, we should probably close that down if possible.
-    //Closing the thread may not properly close the SSH connection and stop the remote process.
-    //TODO: Find out how this works exactly.
-
     incaWorkerThread_.quit();
     incaWorkerThread_.wait();
 
     if(isSessionConnected())
     {
-       disconnectSession(); //NOTE: This is for the main session. It will not close the INCARun session.
+       disconnectSession(); //NOTE: This is for the main session. It will not close the INCARun session. However that should be handled by the RunIncaWorker destructor if all other signals are hooked up correctly.
     }
 }
 
@@ -72,37 +69,35 @@ bool SSHInterface::connectSession(const char *user, const char *address, const c
         if(!session_)
         {
             emit logError("SSH: Failed to create session.");
+            return false;
         }
-        else
+
+        ssh_options_set(session_, SSH_OPTIONS_HOST, address);
+        ssh_options_set(session_, SSH_OPTIONS_USER, user);
+        long timeoutSeconds = 1;
+        ssh_options_set(session_, SSH_OPTIONS_TIMEOUT, &timeoutSeconds);
+        //ssh_options_set(session_, SSH_OPTIONS_STATUS_CALLBACK, SSHInterface::sshStatusCallback); //HMM: does not seem to exist in the latest mingw binary version. We could get it by compiling the library ourselves.
+
+        int rc = ssh_connect(session_);
+        if(rc != SSH_OK)
         {
-            ssh_options_set(session_, SSH_OPTIONS_HOST, address);
-            ssh_options_set(session_, SSH_OPTIONS_USER, user);
-            long timeoutSeconds = 1;
-            ssh_options_set(session_, SSH_OPTIONS_TIMEOUT, &timeoutSeconds);
-            //ssh_options_set(session_, SSH_OPTIONS_STATUS_CALLBACK, SSHInterface::sshStatusCallback); //HMM: does not seem to exist in the latest mingw binary version. We could get it by compiling the library ourselves.
-
-            int rc = ssh_connect(session_);
-            if(rc != SSH_OK)
-            {
-                emit logError(QString("SSH: Failed to connect session: %1").arg(ssh_get_error(session_)));
-            }
-            else
-            {
-                //NOTE: This registers the server as a known host on the local user computer. It should be ok to do this without any further checks since we only connect INCAView to servers we own?
-                ssh_write_knownhost(session_);
-
-                rc = ssh_userauth_privatekey_file(session_, 0, keyfile, 0);
-                if(rc != SSH_AUTH_SUCCESS)
-                {
-                    emit logError(QString("SSH: Failed to authenticate user: %1").arg(ssh_get_error(session_)));
-                    ssh_free(session_);
-                }
-                else
-                {
-                    success = true;
-                }
-            }
+            emit logError(QString("SSH: Failed to connect session: %1").arg(ssh_get_error(session_)));
+            ssh_free(session_);
+            return false;
         }
+
+        //NOTE: This registers the server as a known host on the local user computer. It should be ok to do this without any further checks since we only connect INCAView to servers we own?
+        ssh_write_knownhost(session_);
+
+        rc = ssh_userauth_privatekey_file(session_, 0, keyfile, 0);
+        if(rc != SSH_AUTH_SUCCESS)
+        {
+            emit logError(QString("SSH: Failed to authenticate user: %1").arg(ssh_get_error(session_)));
+            ssh_free(session_);
+            return false;
+        }
+
+        success = true;
     }
     return success;
 }
@@ -122,12 +117,6 @@ bool SSHInterface::isSessionConnected()
     bool connected = false;
     if(session_)
     {
-        //TODO: If the session is idle for a few minutes there is an error where ssh_is_connected returns true, but when one tries to open a channel it fails with a
-        //  Socket exception callback (2) 10053, (See also https://wiki.pscs.co.uk/how_to:10053)
-        //  and then the session is disconnected. This can be a problem with the google compute engine servers shutting down the connection, but can also be related to which network the user is on.
-        //  I have not been able to trace down the cause.
-        //  If there is no way to permanently solve it, we need some way to catch this problem and reconnect without the program stalling for too long, the problem right now is that
-        //  we have no way to catch it before we try to open a console or send a command in the console, at which point the program hangs for several seconds.
         connected = ssh_is_connected(session_);
     }
     return connected;
@@ -142,11 +131,12 @@ const char * SSHInterface::getDisconnectionMessage()
 
 bool SSHInterface::runCommand(const char *command, char *resultbuffer, int bufferlen)
 {
-    //NOTE: The return value only indicates whether or not the command was executed. It does not say whether or not the program that was called ran successfully.
+    //NOTE: The return value of this function only indicates whether or not the command was executed.
+    //  It does not say whether or not the program that was called ran successfully. For that one has
+    //  to parse the result buffer.
     bool success = false;
     if(isSessionConnected())
     {
-        //TODO: Optimize by holding channel open for later use once it is opened?
         ssh_channel channel = ssh_channel_new(session_);
         int rc = ssh_channel_open_session(channel);
         if(rc != SSH_OK)
@@ -162,7 +152,6 @@ bool SSHInterface::runCommand(const char *command, char *resultbuffer, int buffe
 
             success = true;
 
-            ssh_channel_send_eof(channel);
             ssh_channel_close(channel);
         }
         ssh_channel_free(channel);
@@ -243,7 +232,7 @@ bool SSHInterface::readFile(void **buffer, size_t* buffersize, const char *remot
             }
 
             rc = ssh_scp_pull_request(scp);
-            //TODO: This should to be more robust!
+            //TODO: This could be more robust!
             // The pull request can also return warnings and other return codes which should probably be handled.
             if(rc != SSH_SCP_REQUEST_NEWFILE)
             {
@@ -433,7 +422,7 @@ bool SSHInterface::getResultSets(const char *remoteDB, const QVector<int>& IDs, 
 
                 //qDebug(QString::number((int)numresults).toLatin1().data());
 
-                for(int i = 0; i < numresults; ++i)
+                for(uint i = 0; i < numresults; ++i)
                 {
                     //TODO: Check that we never overstep the filesize;
                     uint64_t count = *(uint64_t *)data;
@@ -494,6 +483,8 @@ void SSHInterface::runINCA(const char *user, const char *address, const char *ke
 
     SSHRunIncaWorker *worker = new SSHRunIncaWorker;
     worker->moveToThread(&incaWorkerThread_);
+
+    connect(worker, &SSHRunIncaWorker::resultReady, &incaWorkerThread_, &QThread::quit);
     connect(&incaWorkerThread_, &QThread::finished, worker, &QObject::deleteLater);
     connect(worker, &SSHRunIncaWorker::resultReady, this, &SSHInterface::handleIncaFinished);
     connect(worker, &SSHRunIncaWorker::tick, this, &SSHInterface::handleIncaTick);
@@ -504,7 +495,6 @@ void SSHInterface::runINCA(const char *user, const char *address, const char *ke
 
     progressBar_ = progressBar;
     progressBar_->setVisible(true);
-    progressBar_->setMaximum(20); //TODO: Set to the correct amout of timesteps!
 
     incaWorkerThread_.start();
 
@@ -535,12 +525,12 @@ void SSHInterface::handleIncaTick(int ticknum)
 
 void SSHInterface::sendNoop()
 {
-    qDebug() << "No-op";
+    qDebug() << "SSH - we sent a No-op";
 
     //NOTE: This function is supposed to be called in a regular interval so that the session is not idle
     // for too long.
     //TODO: Since this is called by the timer, what happens if we are doing someting with the session at
-    // the same time?? Do we need to set a lock while using the session that prevents this from being called?
+    // the same time? Do we need to set a lock while using the session that prevents this from being called?
 
     if(session_)
     {
@@ -562,7 +552,7 @@ void SSHRunIncaWorker::runINCA(const char *user, const char *address, const char
 {
     //NOTE: We have to create a new SSH session in the new thread. Two threads can not use the same session in libssh,
     //or there is a risk of state corruption.
-    ssh_session inca_run_session = ssh_new();
+    inca_run_session = ssh_new();
     if(!inca_run_session)
     {
         emit reportError("SSH: Failed to create session to start run of inca.");
@@ -589,9 +579,8 @@ void SSHRunIncaWorker::runINCA(const char *user, const char *address, const char
         ssh_free(inca_run_session);
     }
 
-    //TODO: Optimize by holding channel open for later use once it is opened?
-    ssh_channel channel = ssh_channel_new(inca_run_session);
-    rc = ssh_channel_open_session(channel);
+    inca_run_channel = ssh_channel_new(inca_run_session);
+    rc = ssh_channel_open_session(inca_run_channel);
     if(rc != SSH_OK)
     {
         emit reportError(QString("SSH: Failed to open channel: %1").arg(ssh_get_error(inca_run_session)));
@@ -599,12 +588,12 @@ void SSHRunIncaWorker::runINCA(const char *user, const char *address, const char
         return;
     }
 
-    ssh_channel_request_exec(channel, "cd incaview;./core_hbv");
+    ssh_channel_request_exec(inca_run_channel, "cd incaview;./core_hbv");
 
     char readData[512];
 
     int poll_rc;
-    while((poll_rc = ssh_channel_poll(channel, 0)) != SSH_EOF)
+    while((poll_rc = ssh_channel_poll(inca_run_channel, 0)) != SSH_EOF)
     {
         if(poll_rc == SSH_ERROR)
         {
@@ -615,21 +604,45 @@ void SSHRunIncaWorker::runINCA(const char *user, const char *address, const char
         //TODO: Check that this sleep works correctly!
         QThread::msleep(50);
 
-        int rc = ssh_channel_read_nonblocking(channel, readData, sizeof(readData)-1, 0);
+        int rc = ssh_channel_read_nonblocking(inca_run_channel, readData, sizeof(readData)-1, 0);
         readData[rc] = 0;
         if(rc > 0)
         {
             emit log(readData);
-            //TODO: When we have an inca model that prints out its timesteps, parse output and emit tick(timestep); to update the progress bar.
+            //TODO: When we have an inca model that prints out its timesteps, parse this output and
+            //emit tick(timestep);
+            // to update the progress bar.
         }
     }
 
-    ssh_channel_send_eof(channel);
-    ssh_channel_close(channel);
-
-    ssh_channel_free(channel);
+    ssh_channel_close(inca_run_channel);
+    ssh_channel_free(inca_run_channel);
+    inca_run_channel = 0;
     ssh_disconnect(inca_run_session);
     ssh_free(inca_run_session);
+    inca_run_session = 0;
 
     emit resultReady();
+}
+
+SSHRunIncaWorker::~SSHRunIncaWorker()
+{
+    if(inca_run_channel)
+    {
+        //NOTE: This is not entirely thread safe since this could happen while the runINCA function was attempting to close the channel, but
+        // that would only be an issue when the program is forcibly closed any way.
+
+        //TODO: We may also want to send a signal to kill the remote process. See https://www.libssh.org/archive/libssh/2011-05/0000005.html
+        // however we need a working instance of INCA that has significan run time to test that properly.
+        // Also, we should think about whether that is the right thing to do. It may cause database corruption at the far end if we are unlucky?
+        ssh_channel_close(inca_run_channel);
+        ssh_channel_free(inca_run_channel);
+        inca_run_channel = 0;
+    }
+    if(inca_run_session)
+    {
+        ssh_disconnect(inca_run_session);
+        ssh_free(inca_run_session);
+        inca_run_session = 0;
+    }
 }

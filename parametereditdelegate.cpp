@@ -1,16 +1,16 @@
-#include "lineeditdelegate.h"
+#include "parametereditdelegate.h"
 #include "parametermodel.h"
 #include <QDateEdit>
 
-LineEditDelegate::LineEditDelegate(QObject *parent)
+ParameterEditDelegate::ParameterEditDelegate(QObject *parent)
     : QStyledItemDelegate(parent)
 {
 
 }
 
-QWidget *LineEditDelegate::createEditor(QWidget *parent, const QStyleOptionViewItem &option, const QModelIndex &index) const
+QWidget *ParameterEditDelegate::createEditor(QWidget *parent, const QStyleOptionViewItem &option, const QModelIndex &index) const
 {
-    ParameterModel *parmodel = (ParameterModel*)(index.model());
+    const ParameterModel *parmodel = static_cast<const ParameterModel*>(index.model());
     parameter_type type = parmodel->getTypeOfRow(index.row());
     if(type == parametertype_ptime)
     {
@@ -20,14 +20,14 @@ QWidget *LineEditDelegate::createEditor(QWidget *parent, const QStyleOptionViewI
         return dateEdit;
     }
     else if(type == parametertype_bool)
-        return 0; //NOTE: We don't use a delegate for editing bools, instead we just do click=toggle in the parametermodel.
+        return 0; //NOTE: We don't use a delegate for editing bools, instead we just do "click means toggle" in the parametermodel. See ParameterModel::handleClick
 
     return new MyLineEdit(parent);
 }
 
-void LineEditDelegate::setEditorData(QWidget *editor, const QModelIndex &index) const
+void ParameterEditDelegate::setEditorData(QWidget *editor, const QModelIndex &index) const
 {
-    ParameterModel *parmodel = (ParameterModel*)(index.model());
+    const ParameterModel *parmodel = static_cast<const ParameterModel*>(index.model());
     if(parmodel->getTypeOfRow(index.row()) == parametertype_ptime)
     {
         QDateEdit *dateEdit = static_cast<QDateEdit*>(editor);
@@ -41,9 +41,9 @@ void LineEditDelegate::setEditorData(QWidget *editor, const QModelIndex &index) 
     }
 }
 
-void LineEditDelegate::setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex &index) const
+void ParameterEditDelegate::setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex &index) const
 {
-    ParameterModel *parmodel = (ParameterModel*)(model);
+    ParameterModel *parmodel = static_cast<ParameterModel*>(model);
     if(parmodel->getTypeOfRow(index.row()) == parametertype_ptime)
     {
         QDateEdit *dateEdit = static_cast<QDateEdit*>(editor);
@@ -58,7 +58,7 @@ void LineEditDelegate::setModelData(QWidget *editor, QAbstractItemModel *model, 
     }
 }
 
-void LineEditDelegate::updateEditorGeometry(QWidget *editor, const QStyleOptionViewItem &option, const QModelIndex &index) const
+void ParameterEditDelegate::updateEditorGeometry(QWidget *editor, const QStyleOptionViewItem &option, const QModelIndex &index) const
 {
     editor->setGeometry(option.rect);
 }
