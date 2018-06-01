@@ -8,6 +8,7 @@
 #include <QThread>
 #include <QProgressBar>
 #include <QTimer>
+#include <QString>
 
 //NOTE: we have to define these if we are not on Linux.
 #ifndef S_IRWXU
@@ -16,15 +17,25 @@
     #define	S_IWUSR	0000200
 #endif
 
+
+
+struct ModelSpec
+{
+    QString name;
+    QString exeName; //NOTE: eventually should maybe be a path.
+    QString databasePath;
+};
+
+
 //NOTE: SSHRunIncaWorker is used for calling and monitoring the output of INCA
 //in a separate thread while the rest of the program continues its business.
-class SSHRunIncaWorker : public QObject
+class SSHRunModelWorker : public QObject
 {
     Q_OBJECT
 
 public:
-    void runINCA(const char *, const char *, const char *);
-    virtual ~SSHRunIncaWorker();
+    void runModel(const char *, const char *, const char *exename, const char *);
+    virtual ~SSHRunModelWorker();
 signals:
     void tick(int);
     void resultReady();
@@ -55,7 +66,7 @@ public:
 
     const char * getDisconnectionMessage();
 
-    void runINCA(const char *user, const char *address, const char *keyfile, QProgressBar *progressBar);
+    void runModel(const char *user, const char *address, const char *keyfile, const char *exename, QProgressBar *progressBar);
     void handleIncaFinished();
     void handleIncaTick(int);
     void handleRunINCAError(const QString&);

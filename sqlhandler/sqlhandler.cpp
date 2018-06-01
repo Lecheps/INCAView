@@ -224,7 +224,6 @@ bool export_parameter_values_min_max(sqlite3 *db, FILE *file)
 		if(rc != SQLITE_OK)
 		{
 			fprintf(stdout, "ERROR; SQL, could not prepare statement %s\n", commandbuf);
-			fclose(file);
 			return false;
 		}
 		rc = sqlite3_step(stmt);
@@ -238,7 +237,6 @@ bool export_parameter_values_min_max(sqlite3 *db, FILE *file)
 			{
 				fprintf(stdout, "ERROR: Database: Parameter with ID %d is registered as having type %s, but is in the table for %s.\n",
 					entry.ID, typetxt, value_tables[i]);
-				fclose(file);
 				return false;
 			}
 			switch(types[i])
@@ -278,12 +276,12 @@ bool export_parameter_values_min_max(sqlite3 *db, FILE *file)
 		}
 		if(rc == SQLITE_ERROR)
 		{
-			fprintf(stdout, "ERROR: SQL Error in stepping through statement.\n");
+			fprintf(stdout, "ERROR: SQL Error in stepping through statement while reading parameters.\n");
 			return false;
 		}
 		else if(rc != SQLITE_DONE)
 		{
-			fprintf(stdout, "ERROR: SQL Unknown mishap in stepping through statement.\n");
+			fprintf(stdout, "ERROR: SQL Unknown mishap in stepping through statement while reading parameters.\n");
 			return false;
 		}
 	}
@@ -295,6 +293,14 @@ bool export_parameter_values_min_max(sqlite3 *db, FILE *file)
 
 bool import_parameter_values(sqlite3 *db, FILE *file)
 {
+	const char *sqlcommand[4] =
+	{
+		"UPDATE ParameterValues_bool SET value = ? WHERE ID = ?;",
+		"UPDATE ParameterValues_double SET value = ? WHERE ID = ?;",
+		"UPDATE ParameterValues_int SET value = ? WHERE ID = ?;",
+		"UPDATE ParameterValues_ptime SET value = ? WHERE ID = ?;",
+	};
+	
 	u64 numparameters;
 	fread(&numparameters, sizeof(u64), 1, file);
 	for(int i = 0; i < numparameters; ++i)
@@ -302,32 +308,36 @@ bool import_parameter_values(sqlite3 *db, FILE *file)
 		parameter_serial_entry entry;
 		fread(&entry, sizeof(parameter_serial_entry), 1, file);
 		
-		char valuestring[64];
+		const char *command = sqlcommand[entry.type];
+		sqlite3_stmt *stmt;
+		int rc = sqlite3_prepare_v2(db, command, -1, &stmt, 0);
+		if(rc != SQLITE_OK)
+		{
+			fprintf(stdout, "ERROR; SQL, could not prepare statement %s\n", command);
+			return false;
+		}
 		
-		//TODO: instead of setting these using a string, we could bind the values directly to the query.
-		print_parameter_value(valuestring, &entry);
-		
-		char sqlcommand[512];
+		sqlite3_bind_int(stmt, 2, entry.ID);
 		switch(entry.type)
 		{
 			case parametertype_double:
 			{
-				sprintf(sqlcommand, "UPDATE ParameterValues_double SET value = %s WHERE ID = %u;", valuestring, entry.ID);
+				sqlite3_bind_double(stmt, 1, entry.value.val_double);
 			} break;
 			
 			case parametertype_bool:
 			{
-				sprintf(sqlcommand, "UPDATE ParameterValues_bool SET value = %s WHERE ID = %u;", valuestring, entry.ID);
+				sqlite3_bind_int(stmt, 1, entry.value.val_bool);
 			} break;
 			
 			case parametertype_uint:
 			{
-				sprintf(sqlcommand, "UPDATE ParameterValues_int SET value = %s WHERE ID = %u;", valuestring, entry.ID);
+				sqlite3_bind_int(stmt, 1, entry.value.val_uint);
 			} break;
 			
 			case parametertype_ptime:
 			{
-				sprintf(sqlcommand, "UPDATE ParameterValues_ptime SET value = %s WHERE ID = %u;", valuestring, entry.ID);
+				sqlite3_bind_int64(stmt, 1, entry.value.val_ptime);
 			} break;
 			
 			default:
@@ -336,15 +346,15 @@ bool import_parameter_values(sqlite3 *db, FILE *file)
 				return false;
 			} break;
 		}
-		//fprintf(stdout, sqlcommand);
-		
-		char *errmsg;
-		int rc = sqlite3_exec(db, sqlcommand, 0, 0, &errmsg);
-		if(rc != SQLITE_OK)
+		rc = sqlite3_step(stmt);
+		if(rc == SQLITE_ERROR)
 		{
-			fprintf(stdout, "ERROR: SQL error: %s\n", errmsg);
-			sqlite3_free(errmsg);
-			fclose(file);
+			fprintf(stdout, "ERROR: SQL Error in stepping through statement while storing parameters: %s\n", sqlite3_errmsg(db));
+			return false;
+		}
+		else if(rc != SQLITE_DONE)
+		{
+			fprintf(stdout, "ERROR: SQL Unknown mishap in stepping through statement while storing parameters.\n");
 			return false;
 		}
 	}

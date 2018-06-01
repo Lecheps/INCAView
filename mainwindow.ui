@@ -167,12 +167,29 @@ Values:</string>
       <item>
        <layout class="QHBoxLayout" name="buttonsLayout">
         <item>
+         <widget class="QLabel" name="label_2">
+          <property name="text">
+           <string>Model:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="comboBoxSelectModel"/>
+        </item>
+        <item>
          <widget class="QPushButton" name="pushRun">
           <property name="toolTip">
            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Run INCA.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
           </property>
           <property name="text">
            <string>Run model</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="pushSaveParameters">
+          <property name="text">
+           <string>Save parameters</string>
           </property>
          </widget>
         </item>
@@ -190,16 +207,50 @@ Values:</string>
           </property>
           <property name="sizeHint" stdset="0">
            <size>
-            <width>40</width>
+            <width>20</width>
             <height>20</height>
            </size>
           </property>
          </spacer>
         </item>
         <item>
+         <widget class="QLineEdit" name="lineEditUsername">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="label">
+          <property name="text">
+           <string>@</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="lineEditURL">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+         </widget>
+        </item>
+        <item>
          <widget class="QPushButton" name="pushConnect">
           <property name="text">
            <string>Connect to cloud</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="pushDisconnect">
+          <property name="text">
+           <string>Disconnect</string>
           </property>
          </widget>
         </item>

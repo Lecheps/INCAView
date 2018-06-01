@@ -4,6 +4,9 @@
 
 //NOTE: Useful blog post on using QThread: https://mayaposch.wordpress.com/2011/11/01/how-to-really-truly-use-qthreads-the-full-explanation/
 
+//Important TODO: Find a way to generate temp file names that are specific to each user, don't use "data.dat". Also, there should be a way to clean these
+// files up after use. Alternatively, find a different way of sending binary data.
+
 SSHInterface::SSHInterface()
 {
     session_ = 0;
@@ -25,7 +28,7 @@ SSHInterface::SSHInterface()
     //ssh_set_log_level(SSH_LOG_PACKET);
     ssh_set_log_callback(SSHInterface::sshLogCallback);
 
-    //NOTE: We send a no-op to the server every 5 minutes to keep the session alive. This will hopefully stay the firewall from thinking
+    //NOTE: We send a no-op to the server every 5 minutes to keep the session alive. This will hopefully stop the firewall from thinking
     // it is dead and close it.
     sendNoopTimer = new QTimer(this);
     QObject::connect(sendNoopTimer, &QTimer::timeout, this, &SSHInterface::sendNoop);
@@ -63,6 +66,7 @@ bool SSHInterface::connectSession(const char *user, const char *address, const c
         if(session_)
         {
             ssh_free(session_);
+            session_ = 0;
         }
 
         session_ = ssh_new();
@@ -83,10 +87,13 @@ bool SSHInterface::connectSession(const char *user, const char *address, const c
         {
             emit logError(QString("SSH: Failed to connect session: %1").arg(ssh_get_error(session_)));
             ssh_free(session_);
+            session_ = 0;
             return false;
         }
 
         //NOTE: This registers the server as a known host on the local user computer. It should be ok to do this without any further checks since we only connect INCAView to servers we own?
+        // ALTHOUGH: somebody may mistype the server address. The problem with querying them for this though is that they would maybe not recognize the mistyping?
+        // Alternatively, eventually set up a server that provides the right address so that the user does not have to type it in.
         ssh_write_knownhost(session_);
 
         rc = ssh_userauth_privatekey_file(session_, 0, keyfile, 0);
@@ -94,6 +101,7 @@ bool SSHInterface::connectSession(const char *user, const char *address, const c
         {
             emit logError(QString("SSH: Failed to authenticate user: %1").arg(ssh_get_error(session_)));
             ssh_free(session_);
+            session_ = 0;
             return false;
         }
 
@@ -420,7 +428,7 @@ bool SSHInterface::getResultSets(const char *remoteDB, const QVector<int>& IDs, 
             {
                 valuedata.resize((int)numresults);
 
-                //qDebug(QString::number((int)numresults).toLatin1().data());
+                //qDebug() << numresults;
 
                 for(uint i = 0; i < numresults; ++i)
                 {
@@ -429,7 +437,7 @@ bool SSHInterface::getResultSets(const char *remoteDB, const QVector<int>& IDs, 
                     data += sizeof(uint64_t);
                     int cnt = (int)count;
 
-                    //qDebug(QString::number(cnt).toLatin1().data());
+                    //qDebug() << cnt;
 
                     QVector<double>& current = valuedata[i];
                     current.resize(cnt);
@@ -474,31 +482,31 @@ void SSHInterface::writeParameterValues(const char *remoteDB, QVector<parameter_
 }
 
 
-void SSHInterface::runINCA(const char *user, const char *address, const char *keyfile, QProgressBar *progressBar)
+void SSHInterface::runModel(const char *user, const char *address, const char *keyfile, const char *exename, QProgressBar *progressBar)
 {
     //NOTE: We have to create a new SSH session in the new thread. Two different threads can not use the same session in libssh,
     //or there is a risk of state corruption.
 
     //TODO: Check that we are not already running a remote INCA process from this application. (Should not happen if the UI behaves correctly though).
 
-    SSHRunIncaWorker *worker = new SSHRunIncaWorker;
+    SSHRunModelWorker *worker = new SSHRunModelWorker;
     worker->moveToThread(&incaWorkerThread_);
 
-    connect(worker, &SSHRunIncaWorker::resultReady, &incaWorkerThread_, &QThread::quit);
+    connect(worker, &SSHRunModelWorker::resultReady, &incaWorkerThread_, &QThread::quit);
     connect(&incaWorkerThread_, &QThread::finished, worker, &QObject::deleteLater);
-    connect(worker, &SSHRunIncaWorker::resultReady, this, &SSHInterface::handleIncaFinished);
-    connect(worker, &SSHRunIncaWorker::tick, this, &SSHInterface::handleIncaTick);
+    connect(worker, &SSHRunModelWorker::resultReady, this, &SSHInterface::handleIncaFinished);
+    connect(worker, &SSHRunModelWorker::tick, this, &SSHInterface::handleIncaTick);
 
     //Relay logging signals
-    connect(worker, &SSHRunIncaWorker::log, this, &SSHInterface::log);
-    connect(worker, &SSHRunIncaWorker::reportError, this, &SSHInterface::handleRunINCAError);
+    connect(worker, &SSHRunModelWorker::log, this, &SSHInterface::log);
+    connect(worker, &SSHRunModelWorker::reportError, this, &SSHInterface::handleRunINCAError);
 
     progressBar_ = progressBar;
     progressBar_->setVisible(true);
 
     incaWorkerThread_.start();
 
-    worker->runINCA(user, address, keyfile);
+    worker->runModel(user, address, exename, keyfile);
 }
 
 
@@ -527,10 +535,11 @@ void SSHInterface::sendNoop()
 {
     qDebug() << "SSH - we sent a No-op";
 
-    //NOTE: This function is supposed to be called in a regular interval so that the session is not idle
-    // for too long.
-    //TODO: Since this is called by the timer, what happens if we are doing someting with the session at
-    // the same time? Do we need to set a lock while using the session that prevents this from being called?
+    //NOTE: This function is supposed to be called in a regular interval so that the session is not idle (and so that the firewall does not shut down
+    // the connection).
+    //NOTE: According to my understanding, the QTimer does not work on a separate thread but rather in the main application's event loop, so this
+    // function will never be called while the sshInterface is doing something else, meaning we should not get conflicts when using the session_ this way
+    // as we would if we used it in a separate thread.
 
     if(session_)
     {
@@ -545,10 +554,10 @@ void SSHInterface::sendNoop()
 }
 
 
-//--------------------------- SSHRunIncaWorker --------------------------------------------------------------------
+//--------------------------- SSHRunModelWorker --------------------------------------------------------------------
 
 
-void SSHRunIncaWorker::runINCA(const char *user, const char *address, const char *keyfile)
+void SSHRunModelWorker::runModel(const char *user, const char *address, const char *exename, const char *keyfile)
 {
     //NOTE: We have to create a new SSH session in the new thread. Two threads can not use the same session in libssh,
     //or there is a risk of state corruption.
@@ -588,7 +597,11 @@ void SSHRunIncaWorker::runINCA(const char *user, const char *address, const char
         return;
     }
 
-    ssh_channel_request_exec(inca_run_channel, "cd incaview;./core_hbv");
+    char runcommand[512];
+    sprintf(runcommand, "cd incaview;./%s", exename);
+    ssh_channel_request_exec(inca_run_channel, runcommand);
+
+    //qDebug(runcommand);
 
     char readData[512];
 
@@ -610,8 +623,11 @@ void SSHRunIncaWorker::runINCA(const char *user, const char *address, const char
         {
             emit log(readData);
             //TODO: When we have an inca model that prints out its timesteps, parse this output and
-            //emit tick(timestep);
-            // to update the progress bar.
+            //emit tick(timestep); to update the progress bar.
+
+            //NOTE: If the provided exe name is false or something else is wrong with the command we provided, that seems to be printed to
+            // stderr, and so we don't catch it. Of course, we should never provide an exe name that is wrong, but it would be nice to log
+            // any error in case it happens.
         }
     }
 
@@ -625,15 +641,15 @@ void SSHRunIncaWorker::runINCA(const char *user, const char *address, const char
     emit resultReady();
 }
 
-SSHRunIncaWorker::~SSHRunIncaWorker()
+SSHRunModelWorker::~SSHRunModelWorker()
 {
     if(inca_run_channel)
     {
         //NOTE: This is not entirely thread safe since this could happen while the runINCA function was attempting to close the channel, but
-        // that would only be an issue when the program is forcibly closed any way.
+        // that would only be an issue when the program is forcibly closed exactly at the same time as the run is finishing.
 
         //TODO: We may also want to send a signal to kill the remote process. See https://www.libssh.org/archive/libssh/2011-05/0000005.html
-        // however we need a working instance of INCA that has significan run time to test that properly.
+        // however we need a working instance of INCA that has significan run duration to test that properly.
         // Also, we should think about whether that is the right thing to do. It may cause database corruption at the far end if we are unlucky?
         ssh_channel_close(inca_run_channel);
         ssh_channel_free(inca_run_channel);

@@ -6,11 +6,11 @@
 
 enum parameter_type
 {
-    parametertype_notsupported,
-    parametertype_double,
-    parametertype_uint,
-    parametertype_bool,
-    parametertype_ptime,
+	parametertype_bool = 0, //NOTE: Don't change the values of these. They are used as indexes in some lookups in sqlhandler.cpp
+    parametertype_double = 1,
+    parametertype_uint = 2,
+    parametertype_ptime = 3,
+	parametertype_notsupported,
 };
 
 struct parameter_value

@@ -19,6 +19,7 @@ namespace Ui {
 class MainWindow;
 }
 
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -30,19 +31,22 @@ public:
 private slots:
 
     void on_pushConnect_clicked();
-    //void on_pushLoad_clicked();
-    //void on_pushSave_clicked();
-    //void on_pushSaveAs_clicked();
+    void on_pushDisconnect_clicked();
     void on_pushRun_clicked();
+    void on_pushSaveParameters_clicked();
     void closeEvent (QCloseEvent *);
 
     void updateParameterView(const QItemSelection &, const QItemSelection &);
     void updateGraphsAndResultSummary();
+    void clearGraphsAndResultSummary();
+
+    void handleModelSelect(int index);
+
     void copyToClipboard(bool);
     void undo(bool);
     void updateGraphToolTip(QMouseEvent *event);
     void parameterWasEdited(ParameterEditAction);
-    void handleSSHDisconnect();
+    void handleInvoluntarySSHDisconnect();
     void onRunINCAFinished();
     void handleRunINCAError(const QString&);
 
@@ -51,14 +55,13 @@ private slots:
     void logSSHError(const QString&);
 
 private:
+    void toggleParametersHaveBeenEditedSinceLastSave(bool);
 
-    void populateTreeModelResults(TreeModel*);
-    void populateParameterModels(TreeModel*, ParameterModel*);
+    void runModel();
 
-    void toggleStuffHasBeenEditedSinceLastSave(bool);
+    void toggleWeExpectToBeConnected(bool);
 
-    void runINCA();
-
+    void loadModelData();
 
     //static bool copyAndOverwriteFile(const QString&, const QString&);
     //bool saveCheckParameters();
@@ -73,16 +76,17 @@ private:
     ParameterModel *parameterModel_;
     ParameterEditDelegate *lineEditDelegate;
 
-    const char *serverAddress_;
-    const char *remoteUsername_;
-    const char *remoteDBpath_;
     const char *keyPath_;
 
-    bool stuffHasBeenEditedSinceLastSave = false;
+    bool parametersHaveBeenEditedSinceLastSave_ = false;
+    bool weExpectToBeConnected_ = false;
 
     QVector<QColor> graphColors_;
 
     QVector<ParameterEditAction> editUndoStack_;
+
+    QVector<ModelSpec> availableModels_;
+    int currentSelectedModel_ = -1;
 
     SSHInterface sshInterface_;
 };
