@@ -231,7 +231,7 @@ Values:</string>
          </widget>
         </item>
         <item>
-         <widget class="QLineEdit" name="lineEditURL">
+         <widget class="QLineEdit" name="lineEditIP">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
             <horstretch>0</horstretch>

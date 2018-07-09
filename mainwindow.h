@@ -85,8 +85,8 @@ private:
 
     QVector<ParameterEditAction> editUndoStack_;
 
-    QVector<ModelSpec> availableModels_;
-    int currentSelectedModel_ = -1;
+    QVector<ProjectSpec> availableProjects_;
+    int currentSelectedProject_ = -1;
 
     SSHInterface sshInterface_;
 };

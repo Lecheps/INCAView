@@ -1,6 +1,7 @@
 #include "sshInterface.h"
 #include <QDebug>
 #include <QTime>
+#include <QRandomGenerator>
 
 //NOTE: Useful blog post on using QThread: https://mayaposch.wordpress.com/2011/11/01/how-to-really-truly-use-qthreads-the-full-explanation/
 
@@ -155,8 +156,11 @@ bool SSHInterface::runCommand(const char *command, char *resultbuffer, int buffe
         {
             ssh_channel_request_exec(channel, command);
 
-            int nbytes = ssh_channel_read(channel, resultbuffer, bufferlen-1, 0);
-            resultbuffer[nbytes] = 0;
+            if(resultbuffer)
+            {
+                int nbytes = ssh_channel_read(channel, resultbuffer, bufferlen-1, 0);
+                resultbuffer[nbytes] = 0;
+            }
 
             success = true;
 
@@ -304,8 +308,8 @@ bool SSHInterface::readFile(void **buffer, size_t* buffersize, const char *remot
 
 bool startsWith(const char *pre, const char *str)
 {
-    size_t lenpre = strlen(pre),
-           lenstr = strlen(str);
+    size_t lenpre = strlen(pre);
+    size_t lenstr = strlen(str);
     return lenstr < lenpre ? false : strncmp(pre, str, lenpre) == 0;
 }
 
@@ -341,15 +345,38 @@ bool SSHInterface::runSqlHandler(const char *command, const char *db, const char
     return success;
 }
 
+void SSHInterface::generateRandomTransactionFileName(char *outfilename, const char *dbname)
+{
+    quint32 number = QRandomGenerator::global()->generate();
+    const char *lastslash = dbname;
+    for(const char *c = dbname; *c; c++)
+    {
+        if(*c == '/' || *c == '\\') lastslash = c + 1;
+    }
+    sprintf(outfilename, "tmp%u%s.dat", number, lastslash);
+
+    qDebug() << "Generated transaction file name: " << outfilename;
+}
+
+void SSHInterface::deleteTransactionFile(char *filename)
+{
+    char command[512];
+    sprintf(command, "rm %s", filename);
+    runCommand(command, 0, 0);
+}
+
 void SSHInterface::getStructureData(const char *remoteDB, const char *command, QVector<TreeData> &outdata)
 {
-    bool success = runSqlHandler(command, remoteDB, "data.dat");
+    char tmpname[256];
+    generateRandomTransactionFileName(tmpname, remoteDB);
+
+    bool success = runSqlHandler(command, remoteDB, tmpname);
 
     if(success)
     {
         void *filedata = 0;
         size_t filesize;
-        success = readFile(&filedata, &filesize, "~/data.dat");
+        success = readFile(&filedata, &filesize, tmpname);
         if(success)
         {
             uint8_t *at = (uint8_t *)filedata;
@@ -370,6 +397,8 @@ void SSHInterface::getStructureData(const char *remoteDB, const char *command, Q
         }
         if(filedata) free(filedata);
     }
+
+    deleteTransactionFile(tmpname);
 }
 
 void SSHInterface::getResultsStructure(const char *remoteDB, QVector<TreeData> &structuredata)
@@ -386,13 +415,16 @@ void SSHInterface::getParameterStructure(const char *remoteDB, QVector<TreeData>
 
 void SSHInterface::getParameterValuesMinMax(const char *remoteDB, std::map<uint32_t, parameter_min_max_val_serial_entry>& IDtoParam)
 {
-    bool success = runSqlHandler(EXPORT_PARAMETER_VALUES_MIN_MAX_COMMAND, remoteDB, "data.dat");
+    char tmpname[256];
+    generateRandomTransactionFileName(tmpname, remoteDB);
+
+    bool success = runSqlHandler(EXPORT_PARAMETER_VALUES_MIN_MAX_COMMAND, remoteDB, tmpname);
 
     if(success)
     {
         void *filedata = 0;
         size_t filesize;
-        success = readFile(&filedata, &filesize, "~/data.dat");
+        success = readFile(&filedata, &filesize, tmpname);
         if(success)
         {
             uint8_t *at = (uint8_t *)filedata;
@@ -406,18 +438,23 @@ void SSHInterface::getParameterValuesMinMax(const char *remoteDB, std::map<uint3
 
         if(filedata) free(filedata);
     }
+
+    deleteTransactionFile(tmpname);
 }
 
 
 bool SSHInterface::getResultSets(const char *remoteDB, const QVector<int>& IDs, QVector<QVector<double>> &valuedata)
 {
-    bool success = runSqlHandler(EXPORT_RESULT_VALUES_COMMAND, remoteDB, "data.dat", &IDs);
+    char tmpname[256];
+    generateRandomTransactionFileName(tmpname, remoteDB);
+
+    bool success = runSqlHandler(EXPORT_RESULT_VALUES_COMMAND, remoteDB, tmpname, &IDs);
 
     if(success)
     {
         void *filedata = 0;
         size_t filesize;
-        success = readFile(&filedata, &filesize, "~/data.dat");
+        success = readFile(&filedata, &filesize, tmpname);
         if(success)
         {
             uint8_t *data = (uint8_t *)filedata;
@@ -460,12 +497,17 @@ bool SSHInterface::getResultSets(const char *remoteDB, const QVector<int>& IDs, 
         if(filedata) free(filedata);
     }
 
+    deleteTransactionFile(tmpname);
+
     return success;
 }
 
 
 void SSHInterface::writeParameterValues(const char *remoteDB, QVector<parameter_serial_entry>& writedata)
 {
+    char tmpname[256];
+    generateRandomTransactionFileName(tmpname, remoteDB);
+
     uint64_t count = writedata.count();
     size_t size = sizeof(uint64_t) + count*sizeof(parameter_serial_entry);
     void *result = malloc(size);
@@ -475,10 +517,12 @@ void SSHInterface::writeParameterValues(const char *remoteDB, QVector<parameter_
     at += sizeof(uint64_t);
     memcpy(at, writedata.data(), count*sizeof(parameter_serial_entry));
 
-    bool success = writeFile(result, size, "~/", "data.dat");
+    bool success = writeFile(result, size, "~/", tmpname);
     free(result);
 
-    if(success) runSqlHandler(IMPORT_PARAMETER_VALUES_COMMAND, remoteDB, "data.dat");
+    if(success) runSqlHandler(IMPORT_PARAMETER_VALUES_COMMAND, remoteDB, tmpname);
+
+    deleteTransactionFile(tmpname);
 }
 
 

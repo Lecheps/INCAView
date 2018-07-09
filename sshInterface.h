@@ -19,7 +19,7 @@
 
 
 
-struct ModelSpec
+struct ProjectSpec
 {
     QString name;
     QString exeName; //NOTE: eventually should maybe be a path.
@@ -88,6 +88,9 @@ private:
     bool readFile(void **buffer, size_t *buffersize, const char *remotefilename);
     bool runSqlHandler(const char *command, const char *db, const char *tempfile, const QVector<int>* extraParam = 0);
     void getStructureData(const char *remoteDB, const char *command, QVector<TreeData> &outdata);
+
+    void generateRandomTransactionFileName(char *outfilename, const char *dbname);
+    void deleteTransactionFile(char *filename);
 
 signals:
     void log(const QString&);

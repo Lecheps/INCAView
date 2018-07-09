@@ -10,10 +10,10 @@ MainWindow::MainWindow(QWidget *parent) :
 {
     ui->setupUi(this);
 
-    //TODO: This not be hard coded, at least not to this path:
+    //TODO: This should not be hard coded, at least not to this path:
     keyPath_ = "C:\\testkeys\\magnusKey";
 
-    ui->lineEditURL->setText("35.189.102.186");
+    ui->lineEditIP->setText("35.189.116.165");
     ui->lineEditUsername->setText("magnus");
 
     treeParameters_ = 0;
@@ -59,6 +59,7 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->widgetPlotResults->setInteraction(QCP::iRangeZoom, true);
     ui->widgetPlotResults->axisRect(0)->setRangeDrag(Qt::Horizontal);
     ui->widgetPlotResults->axisRect(0)->setRangeZoom(Qt::Horizontal);
+    //NOTE: If we want a rectangle zoom for the plot, look at http://www.qcustomplot.com/index.php/support/forum/227
 
     QObject::connect(ui->widgetPlotResults, QCustomPlot::mouseMove, this, &MainWindow::updateGraphToolTip);
 
@@ -110,8 +111,8 @@ void MainWindow::resetWindowTitle()
     if(weExpectToBeConnected_)
     {
         QString dbpath = "";
-        if(currentSelectedModel_ >= 0) dbpath = availableModels_[currentSelectedModel_].databasePath;
-        QString titlepath = QString("%1@%2:~/%3").arg(ui->lineEditUsername->text()).arg(ui->lineEditURL->text()).arg(dbpath);
+        if(currentSelectedProject_ >= 0) dbpath = availableProjects_[currentSelectedProject_].databasePath;
+        QString titlepath = QString("%1@%2:~/%3").arg(ui->lineEditUsername->text()).arg(ui->lineEditIP->text()).arg(dbpath);
         if(parametersHaveBeenEditedSinceLastSave_)
         {
             setWindowTitle("*" + titlepath + " - INCAView");
@@ -132,37 +133,37 @@ void MainWindow::on_pushConnect_clicked()
     // we don't want them to be enabled for the half second the connection takes.
     ui->pushConnect->setEnabled(false);
     ui->lineEditUsername->setEnabled(false);
-    ui->lineEditURL->setEnabled(false);
+    ui->lineEditIP->setEnabled(false);
 
     char namebuf[256];
     strcpy(namebuf, ui->lineEditUsername->text().toLatin1().data()); //Are there really no better ways to copy QString to char *?
-    char urlbuf[256];
-    strcpy(urlbuf, ui->lineEditURL->text().toLatin1().data());
+    char ipbuf[256];
+    strcpy(ipbuf, ui->lineEditIP->text().toLatin1().data());
 
-    log(QString("Attempting to connect to ") + namebuf + "@" + urlbuf + " ...");
+    log(QString("Attempting to connect to ") + namebuf + "@" + ipbuf + " ...");
 
-    bool success = sshInterface_.connectSession(namebuf, urlbuf, keyPath_);
+    bool success = sshInterface_.connectSession(namebuf, ipbuf, keyPath_);
 
     if(success)
     {
-        log("Connection successful");
+        log("Connection successful. Select a project.");
 
-        //TODO: Load the list of models in from the server
+        //TODO: Load the list of projects from the server. Each project should be tied to a specific user. One should be able to create new projects from a list of models.
         //NOTE: The way things are currently set up we need the full path to the database (relative to home/user), but only the name of the exe. This could be cleaned up.
-        availableModels_.push_back({"HBV", "core_hbv", "incaview/test.db"}); //NOTE: It does not work correctly with this db since it has an old format for storing parameter values.
-        availableModels_.push_back({"Persist", "does_not_exist_yet", "incaview/persist.db"});
+        if(!availableProjects_.count())
+        {
+            availableProjects_.push_back({"HBV (db not compatible)", "core_hbv", "incaview/test.db"}); //NOTE: It does not work correctly with this db since it has an old format for storing parameter values.
+            availableProjects_.push_back({"Persist", "does_not_exist_yet", "incaview/persist.db"});
+        }
 
         ui->comboBoxSelectModel->clear();
         ui->comboBoxSelectModel->addItem(tr("<None>"));
-        for(ModelSpec &model : availableModels_)
+        for(ProjectSpec &model : availableProjects_)
         {
             ui->comboBoxSelectModel->addItem(model.name);
         }
 
         toggleWeExpectToBeConnected(true);
-
-        //NOTE: this is to mark that the x axis is uninitialized so that it can be reinitialized later (yell out if you know of a better way to do it!).
-        ui->widgetPlotResults->xAxis->setRange(0.0, 0.1);
     }
     else
     {
@@ -178,7 +179,7 @@ void MainWindow::handleModelSelect(int index)
     {
         if(sshInterface_.isSessionConnected())
         {
-            if(index >= 0 && index <= availableModels_.size())
+            if(index >= 0 && index <= availableProjects_.size())
             {
                 //TODO: If we have edited parameters, we should query the user if they want to change model without saving parameters.
 
@@ -194,10 +195,10 @@ void MainWindow::handleModelSelect(int index)
                 clearGraphsAndResultSummary();
                 editUndoStack_.clear();
 
-                currentSelectedModel_ = index-1; //NOTE: index=0 is the <None> option. So index=1 refers to element 0 of our model list.
-                if(currentSelectedModel_ >= 0 && currentSelectedModel_ < availableModels_.size())
+                currentSelectedProject_ = index-1; //NOTE: index=0 is the <None> option. So index=1 refers to element 0 of our model list.
+                if(currentSelectedProject_ >= 0 && currentSelectedProject_ < availableProjects_.size())
                 {
-                    log("Loading model: " + availableModels_[currentSelectedModel_].name);
+                    log("Loading model: " + availableProjects_[currentSelectedProject_].name);
                     loadModelData();
 
                     ui->treeViewParameters->expandToDepth(3);
@@ -244,7 +245,7 @@ void MainWindow::loadModelData()
 
     //TODO: Just in case something goes wrong when loading from the remote database here, we should really do some more error handling.
     char dbpath[256];
-    strcpy(dbpath, availableModels_[currentSelectedModel_].databasePath.toLatin1().data());
+    strcpy(dbpath, availableProjects_[currentSelectedProject_].databasePath.toLatin1().data());
 
     //NOTE: Loading in the results structure tree:
     QVector<TreeData> resultstreedata;
@@ -296,7 +297,7 @@ void MainWindow::toggleWeExpectToBeConnected(bool connected)
     {
         ui->pushConnect->setEnabled(false);
         ui->lineEditUsername->setEnabled(false);
-        ui->lineEditURL->setEnabled(false);
+        ui->lineEditIP->setEnabled(false);
         ui->pushDisconnect->setEnabled(true);
 
         ui->comboBoxSelectModel->setEnabled(true);
@@ -305,7 +306,7 @@ void MainWindow::toggleWeExpectToBeConnected(bool connected)
     {
         ui->pushConnect->setEnabled(true);
         ui->lineEditUsername->setEnabled(true);
-        ui->lineEditURL->setEnabled(true);
+        ui->lineEditIP->setEnabled(true);
         ui->pushDisconnect->setEnabled(false);
         ui->pushRun->setEnabled(false);
         ui->comboBoxSelectModel->setEnabled(false);
@@ -357,7 +358,7 @@ void MainWindow::on_pushSaveParameters_clicked()
         parameterModel_->serializeParameterData(parameterdata); //NOTE: we should probably only save the parameters that have been changed instead of all of them..
         //TODO: We should probably do some error handling here.
         char dbpath[256];
-        strcpy(dbpath, availableModels_[currentSelectedModel_].databasePath.toLatin1().data());
+        strcpy(dbpath, availableProjects_[currentSelectedProject_].databasePath.toLatin1().data());
         sshInterface_.writeParameterValues(dbpath, parameterdata);
         toggleParametersHaveBeenEditedSinceLastSave(false);
 
@@ -422,13 +423,13 @@ void MainWindow::runModel()
 
     char namebuf[256];
     strcpy(namebuf, ui->lineEditUsername->text().toLatin1().data()); //Are there really no better ways to convert QString to char *?
-    char urlbuf[256];
-    strcpy(urlbuf, ui->lineEditURL->text().toLatin1().data());
+    char ipbuf[256];
+    strcpy(ipbuf, ui->lineEditIP->text().toLatin1().data());
     char exebuf[256];
-    if(currentSelectedModel_ >= 0 && currentSelectedModel_ < availableModels_.size())
+    if(currentSelectedProject_ >= 0 && currentSelectedProject_ < availableProjects_.size())
     {
-        strcpy(exebuf, availableModels_[currentSelectedModel_].exeName.toLatin1().data());
-        sshInterface_.runModel(namebuf, urlbuf, keyPath_, exebuf, ui->progressBarRunInca);
+        strcpy(exebuf, availableProjects_[currentSelectedProject_].exeName.toLatin1().data());
+        sshInterface_.runModel(namebuf, ipbuf, keyPath_, exebuf, ui->progressBarRunInca);
     }
     else
     {
@@ -520,17 +521,22 @@ void MainWindow::updateGraphsAndResultSummary()
             {
                 QVector<QVector<double>> resultsets;
                 char dbpath[256];
-                strcpy(dbpath, availableModels_[currentSelectedModel_].databasePath.toLatin1().data());
+                strcpy(dbpath, availableProjects_[currentSelectedProject_].databasePath.toLatin1().data());
                 bool success = sshInterface_.getResultSets(dbpath, IDs, resultsets);
 
                 if(success)
                 {
+                    //qDebug() << "got data";
+                    ui->widgetPlotResults->xAxis->setRange(0, 0); //NOTE: If we don't do this we may keep the max range of previous plots that are now unselected.
+
                     for(int i = 0; i < IDs.count(); ++i)
                     {
                         int ID = IDs[i];
                         QVector<double>& yval = resultsets[i];
                         int cnt = yval.count();
                         QVector<double> xval(cnt);
+
+                        qDebug() << "data count: " << cnt;
 
                         int64_t starttime;
                         if(parameterModel_->startDateLoaded_)
@@ -678,10 +684,7 @@ void MainWindow::updateGraphsAndResultSummary()
                                 newmax = newmin + 2.0*QCPRange::minRange;
                             }
                             ui->widgetPlotResults->yAxis->setRange(newmin, newmax);
-
-                            if(ui->widgetPlotResults->xAxis->range().upper - ui->widgetPlotResults->xAxis->range().lower < 1.0) //TODO: is there a better way to check if it is uninitialized?
-                                ui->widgetPlotResults->xAxis->setRange(xval.first(), xval.last());
-
+                            ui->widgetPlotResults->xAxis->setRange(xval.first(), xval.last());
                         }
                     }
                 }
