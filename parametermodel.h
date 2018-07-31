@@ -36,8 +36,7 @@ public:
 
     void setValue(int, parameter_value&); //NOTE: this is only to be used by the MainWindow's undo function
 
-    parameter_type getTypeOfRow(int row) const; //NOTE: this is only to be used by the LineEditDelegate
-    parameter_value getRawValue(int row) const; //NOTE: this is only to be used by the LineEditDelegate
+    const Parameter *getParameterAtRow(int row) const; //NOTE: this is only to be used by the edit delegates
 
 
     //NOTE: these are public since I really didn't want to write accessors for them, but they should only be set by this class.

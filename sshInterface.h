@@ -22,8 +22,8 @@
 struct ProjectSpec
 {
     QString name;
-    QString exeName; //NOTE: eventually should maybe be a path.
-    QString databasePath;
+    QString databaseName;
+    QString exeName;
 };
 
 
@@ -58,6 +58,7 @@ public:
     void disconnectSession();
     bool isSessionConnected();
 
+    void getProjectList(const char *remoteDB, const char *username, QVector<ProjectSpec> &outdata);
     void getResultsStructure(const char *remoteDB, QVector<TreeData> &structuredata);
     void getParameterStructure(const char *remoteDB, QVector<TreeData> &structuredata);
     void getParameterValuesMinMax(const char *remoteDB, std::map<uint32_t, parameter_min_max_val_serial_entry>& IDtoParam);
@@ -80,13 +81,13 @@ public:
 private:
     ssh_session session_;
     QThread incaWorkerThread_;
-    QProgressBar *progressBar_;
+    QProgressBar *INCARunProgressBar_;
     QTimer *sendNoopTimer;
 
     bool runCommand(const char *command, char *resultbuffer, int bufferlen);
     bool writeFile(const void *contents, size_t contentssize, const char *remotelocation, const char *remotefilename);
     bool readFile(void **buffer, size_t *buffersize, const char *remotefilename);
-    bool runSqlHandler(const char *command, const char *db, const char *tempfile, const QVector<int>* extraParam = 0);
+    bool runSqlHandler(const char *command, const char *db, const char *tempfile, const QVector<QString> *extraParam = 0);
     void getStructureData(const char *remoteDB, const char *command, QVector<TreeData> &outdata);
 
     void generateRandomTransactionFileName(char *outfilename, const char *dbname);

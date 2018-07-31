@@ -31,6 +31,9 @@ SSHInterface::SSHInterface()
 
     //NOTE: We send a no-op to the server every 5 minutes to keep the session alive. This will hopefully stop the firewall from thinking
     // it is dead and close it.
+    //NOTE: According to my understanding, the QTimer does not work on a separate thread but rather in the main application's event loop, so this
+    // function will never be called while the sshInterface is doing something else, meaning we should not get conflicts when using the session_ in sendNoop()
+    // as we would if we used it in a separate thread.
     sendNoopTimer = new QTimer(this);
     QObject::connect(sendNoopTimer, &QTimer::timeout, this, &SSHInterface::sendNoop);
     sendNoopTimer->start(1000*60*5);
@@ -313,16 +316,16 @@ bool startsWith(const char *pre, const char *str)
     return lenstr < lenpre ? false : strncmp(pre, str, lenpre) == 0;
 }
 
-bool SSHInterface::runSqlHandler(const char *command, const char *db, const char *tempfile, const QVector<int> *extraParam)
+bool SSHInterface::runSqlHandler(const char *command, const char *db, const char *tempfile, const QVector<QString> *extraParam)
 {
     char commandbuf[512];
     char resultbuf[512];
-    int len = sprintf(commandbuf, "./incaview/sqlhandler %s %s %s", command, db, tempfile);
+    int len = sprintf(commandbuf, "./incaview/sqlhandler %s incaview/%s %s", command, db, tempfile);
     if(extraParam)
     {
-        for(int par : *extraParam)
+        for(const QString &par : *extraParam)
         {
-            len += sprintf(commandbuf + len, " %d", par);
+            len += sprintf(commandbuf + len, " %s", par.toLatin1().data());
         }
     }
 
@@ -347,13 +350,16 @@ bool SSHInterface::runSqlHandler(const char *command, const char *db, const char
 
 void SSHInterface::generateRandomTransactionFileName(char *outfilename, const char *dbname)
 {
-    quint32 number = QRandomGenerator::global()->generate();
+    quint32 number = QRandomGenerator::global()->generate(); //NOTE: No guarantee against collisions, but it is very unlikely. Ok when we just have a handful of users.
+
+    /*
     const char *lastslash = dbname;
     for(const char *c = dbname; *c; c++)
     {
         if(*c == '/' || *c == '\\') lastslash = c + 1;
     }
-    sprintf(outfilename, "tmp%u%s.dat", number, lastslash);
+    */
+    sprintf(outfilename, "tmp%u%s.dat", number, dbname);
 
     qDebug() << "Generated transaction file name: " << outfilename;
 }
@@ -364,6 +370,47 @@ void SSHInterface::deleteTransactionFile(char *filename)
     sprintf(command, "rm %s", filename);
     runCommand(command, 0, 0);
 }
+
+
+void SSHInterface::getProjectList(const char *remoteDB, const char *username, QVector<ProjectSpec> &outdata)
+{
+    char tmpname[256];
+    generateRandomTransactionFileName(tmpname, remoteDB);
+
+    QVector<QString> extraparam;
+    extraparam.push_back(username);
+
+    bool success = runSqlHandler(EXPORT_PROJECT_LIST_COMMAND, remoteDB, tmpname, &extraparam);
+
+    if(success)
+    {
+        void *filedata = 0;
+        size_t filesize;
+        success = readFile(&filedata, &filesize, tmpname);
+        if(success)
+        {
+            uint8_t *at = (uint8_t *)filedata;
+            while(at < (uint8_t *)filedata + filesize)
+            {
+                project_serial_entry *entry = (project_serial_entry *)at;
+                at += sizeof(project_serial_entry);
+
+                std::string namestr((char *)at, (char *)at + entry->namelen); //Is there a better way to get a QString from a range based char * (not nullterminated) than going via a std::string?
+                at += entry->namelen;
+                std::string dbnamestr((char *)at, (char *)at + entry->dbnamelen);
+                at += entry->dbnamelen;
+                std::string exenamestr((char *)at, (char *)at + entry->exenamelen);
+                at += entry->exenamelen;
+
+                outdata.push_back({QString::fromStdString(namestr), QString::fromStdString(dbnamestr), QString::fromStdString(exenamestr)});
+            }
+        }
+        if(filedata) free(filedata);
+    }
+
+    deleteTransactionFile(tmpname);
+}
+
 
 void SSHInterface::getStructureData(const char *remoteDB, const char *command, QVector<TreeData> &outdata)
 {
@@ -448,7 +495,13 @@ bool SSHInterface::getResultSets(const char *remoteDB, const QVector<int>& IDs, 
     char tmpname[256];
     generateRandomTransactionFileName(tmpname, remoteDB);
 
-    bool success = runSqlHandler(EXPORT_RESULT_VALUES_COMMAND, remoteDB, tmpname, &IDs);
+    QVector<QString> IDstrs;
+    for(int ID : IDs)
+    {
+        IDstrs.push_back(QString::number(ID));
+    }
+
+    bool success = runSqlHandler(EXPORT_RESULT_VALUES_COMMAND, remoteDB, tmpname, &IDstrs);
 
     if(success)
     {
@@ -528,6 +581,8 @@ void SSHInterface::writeParameterValues(const char *remoteDB, QVector<parameter_
 
 void SSHInterface::runModel(const char *user, const char *address, const char *keyfile, const char *exename, QProgressBar *progressBar)
 {
+    //TODO: This should also take a database name to run the model on.
+
     //NOTE: We have to create a new SSH session in the new thread. Two different threads can not use the same session in libssh,
     //or there is a risk of state corruption.
 
@@ -545,8 +600,8 @@ void SSHInterface::runModel(const char *user, const char *address, const char *k
     connect(worker, &SSHRunModelWorker::log, this, &SSHInterface::log);
     connect(worker, &SSHRunModelWorker::reportError, this, &SSHInterface::handleRunINCAError);
 
-    progressBar_ = progressBar;
-    progressBar_->setVisible(true);
+    INCARunProgressBar_ = progressBar;
+    INCARunProgressBar_->setVisible(true);
 
     incaWorkerThread_.start();
 
@@ -556,9 +611,9 @@ void SSHInterface::runModel(const char *user, const char *address, const char *k
 
 void SSHInterface::handleIncaFinished()
 {
-    if(progressBar_)
+    if(INCARunProgressBar_)
     {
-        progressBar_->setVisible(false);
+        INCARunProgressBar_->setVisible(false);
     }
 
     emit runINCAFinished();
@@ -572,7 +627,7 @@ void SSHInterface::handleRunINCAError(const QString& message)
 
 void SSHInterface::handleIncaTick(int ticknum)
 {
-    progressBar_->setValue(ticknum);
+    INCARunProgressBar_->setValue(ticknum);
 }
 
 void SSHInterface::sendNoop()
@@ -581,9 +636,6 @@ void SSHInterface::sendNoop()
 
     //NOTE: This function is supposed to be called in a regular interval so that the session is not idle (and so that the firewall does not shut down
     // the connection).
-    //NOTE: According to my understanding, the QTimer does not work on a separate thread but rather in the main application's event loop, so this
-    // function will never be called while the sshInterface is doing something else, meaning we should not get conflicts when using the session_ this way
-    // as we would if we used it in a separate thread.
 
     if(session_)
     {
@@ -591,7 +643,7 @@ void SSHInterface::sendNoop()
         int rc = ssh_send_ignore(session_, ignorethismessageplease);
         if(rc == SSH_ERROR)
         {
-            //TODO: This is bad, at least if we expected to be connected. Figure out how to handle it
+            //TODO: This is bad, at least if we expected to be connected. Figure out how to handle it. (However it has not been triggered during testing, so maybe it is ok).
             qDebug() << "No-op caused error";
         }
     }
@@ -645,8 +697,6 @@ void SSHRunModelWorker::runModel(const char *user, const char *address, const ch
     sprintf(runcommand, "cd incaview;./%s", exename);
     ssh_channel_request_exec(inca_run_channel, runcommand);
 
-    //qDebug(runcommand);
-
     char readData[512];
 
     int poll_rc;
@@ -663,6 +713,7 @@ void SSHRunModelWorker::runModel(const char *user, const char *address, const ch
 
         int rc = ssh_channel_read_nonblocking(inca_run_channel, readData, sizeof(readData)-1, 0);
         readData[rc] = 0;
+
         if(rc > 0)
         {
             emit log(readData);

@@ -13,9 +13,12 @@ public:
     bool isValidValue(const QString &valueVar);
     bool setValue(const QString &valueVar);
     int isNotInRange(const parameter_value& newval);
-    bool IsInRange() { return !isNotInRange(value); }
+    bool isInRange() { return !isNotInRange(value); }
 
     static QString getValueDisplayString(parameter_value value, parameter_type type, int precision = 10);
+    static QDate valueAsQDate(parameter_value value);
+    static void clipTimeValue(parameter_value &value);
+
 
     QString name;
     int ID;

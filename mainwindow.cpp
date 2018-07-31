@@ -13,7 +13,7 @@ MainWindow::MainWindow(QWidget *parent) :
     //TODO: This should not be hard coded, at least not to this path:
     keyPath_ = "C:\\testkeys\\magnusKey";
 
-    ui->lineEditIP->setText("35.189.116.165");
+    ui->lineEditIP->setText("35.189.120.237");
     ui->lineEditUsername->setText("magnus");
 
     treeParameters_ = 0;
@@ -70,9 +70,9 @@ MainWindow::MainWindow(QWidget *parent) :
 
     ui->progressBarRunInca->setVisible(false);
 
-    ui->comboBoxSelectModel->addItem(tr("<None>"));
+    ui->comboBoxSelectProject->addItem(tr("<None>"));
 
-    QObject::connect(ui->comboBoxSelectModel, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::handleModelSelect);
+    QObject::connect(ui->comboBoxSelectProject, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::handleModelSelect);
 }
 
 MainWindow::~MainWindow()
@@ -111,7 +111,7 @@ void MainWindow::resetWindowTitle()
     if(weExpectToBeConnected_)
     {
         QString dbpath = "";
-        if(currentSelectedProject_ >= 0) dbpath = availableProjects_[currentSelectedProject_].databasePath;
+        if(currentSelectedProject_ >= 0) dbpath = availableProjects_[currentSelectedProject_].databaseName;
         QString titlepath = QString("%1@%2:~/%3").arg(ui->lineEditUsername->text()).arg(ui->lineEditIP->text()).arg(dbpath);
         if(parametersHaveBeenEditedSinceLastSave_)
         {
@@ -129,7 +129,7 @@ void MainWindow::resetWindowTitle()
 
 void MainWindow::on_pushConnect_clicked()
 {
-    //NOTE: Even if the disenabling of these elements are handled by toggleWeExpectToBeConnected below, we want to do them here too since
+    //NOTE: Even if the disabling of these elements are handled by toggleWeExpectToBeConnected below, we want to do them here too since
     // we don't want them to be enabled for the half second the connection takes.
     ui->pushConnect->setEnabled(false);
     ui->lineEditUsername->setEnabled(false);
@@ -149,18 +149,16 @@ void MainWindow::on_pushConnect_clicked()
         log("Connection successful. Select a project.");
 
         //TODO: Load the list of projects from the server. Each project should be tied to a specific user. One should be able to create new projects from a list of models.
-        //NOTE: The way things are currently set up we need the full path to the database (relative to home/user), but only the name of the exe. This could be cleaned up.
         if(!availableProjects_.count())
         {
-            availableProjects_.push_back({"HBV (db not compatible)", "core_hbv", "incaview/test.db"}); //NOTE: It does not work correctly with this db since it has an old format for storing parameter values.
-            availableProjects_.push_back({"Persist", "does_not_exist_yet", "incaview/persist.db"});
+            sshInterface_.getProjectList("projects.db", namebuf, availableProjects_);
         }
 
-        ui->comboBoxSelectModel->clear();
-        ui->comboBoxSelectModel->addItem(tr("<None>"));
-        for(ProjectSpec &model : availableProjects_)
+        ui->comboBoxSelectProject->clear();
+        ui->comboBoxSelectProject->addItem(tr("<None>"));
+        for(ProjectSpec &project : availableProjects_)
         {
-            ui->comboBoxSelectModel->addItem(model.name);
+            ui->comboBoxSelectProject->addItem(project.name);
         }
 
         toggleWeExpectToBeConnected(true);
@@ -198,7 +196,7 @@ void MainWindow::handleModelSelect(int index)
                 currentSelectedProject_ = index-1; //NOTE: index=0 is the <None> option. So index=1 refers to element 0 of our model list.
                 if(currentSelectedProject_ >= 0 && currentSelectedProject_ < availableProjects_.size())
                 {
-                    log("Loading model: " + availableProjects_[currentSelectedProject_].name);
+                    log("Loading project: " + availableProjects_[currentSelectedProject_].name);
                     loadModelData();
 
                     ui->treeViewParameters->expandToDepth(3);
@@ -245,7 +243,7 @@ void MainWindow::loadModelData()
 
     //TODO: Just in case something goes wrong when loading from the remote database here, we should really do some more error handling.
     char dbpath[256];
-    strcpy(dbpath, availableProjects_[currentSelectedProject_].databasePath.toLatin1().data());
+    strcpy(dbpath, availableProjects_[currentSelectedProject_].databaseName.toLatin1().data());
 
     //NOTE: Loading in the results structure tree:
     QVector<TreeData> resultstreedata;
@@ -300,7 +298,7 @@ void MainWindow::toggleWeExpectToBeConnected(bool connected)
         ui->lineEditIP->setEnabled(false);
         ui->pushDisconnect->setEnabled(true);
 
-        ui->comboBoxSelectModel->setEnabled(true);
+        ui->comboBoxSelectProject->setEnabled(true);
     }
     else
     {
@@ -309,7 +307,7 @@ void MainWindow::toggleWeExpectToBeConnected(bool connected)
         ui->lineEditIP->setEnabled(true);
         ui->pushDisconnect->setEnabled(false);
         ui->pushRun->setEnabled(false);
-        ui->comboBoxSelectModel->setEnabled(false);
+        ui->comboBoxSelectProject->setEnabled(false);
         ui->pushSaveParameters->setEnabled(false);
         ui->radioButtonDaily->setEnabled(false);
         ui->radioButtonMonthlyAverages->setEnabled(false);
@@ -326,8 +324,9 @@ void MainWindow::on_pushDisconnect_clicked()
     sshInterface_.disconnectSession();
 
     toggleWeExpectToBeConnected(false);
+    toggleParametersHaveBeenEditedSinceLastSave(false);
 
-    if(treeParameters_) delete treeParameters_; //NOTE: As far as I understand the destructor of the QAbstractItemModel automatically disconnects it from it's view.
+    if(treeParameters_) delete treeParameters_; //NOTE: The destructor of the QAbstractItemModel automatically disconnects it from it's view.
     if(treeResults_) delete treeResults_;
     if(parameterModel_) delete parameterModel_;
     treeParameters_ = 0;
@@ -341,6 +340,8 @@ void MainWindow::on_pushDisconnect_clicked()
 void MainWindow::handleInvoluntarySSHDisconnect()
 {
     toggleWeExpectToBeConnected(false);
+
+    logError("We were disconnected from the SSH connection.");
 
     //TODO: We need to decide what we want to to the state of the parameter model and tree models.
     // Note however that the involuntary disconnect is now less likely since we fixed the timeout bug, so this may not be a priority.
@@ -358,7 +359,7 @@ void MainWindow::on_pushSaveParameters_clicked()
         parameterModel_->serializeParameterData(parameterdata); //NOTE: we should probably only save the parameters that have been changed instead of all of them..
         //TODO: We should probably do some error handling here.
         char dbpath[256];
-        strcpy(dbpath, availableProjects_[currentSelectedProject_].databasePath.toLatin1().data());
+        strcpy(dbpath, availableProjects_[currentSelectedProject_].databaseName.toLatin1().data());
         sshInterface_.writeParameterValues(dbpath, parameterdata);
         toggleParametersHaveBeenEditedSinceLastSave(false);
 
@@ -521,7 +522,7 @@ void MainWindow::updateGraphsAndResultSummary()
             {
                 QVector<QVector<double>> resultsets;
                 char dbpath[256];
-                strcpy(dbpath, availableProjects_[currentSelectedProject_].databasePath.toLatin1().data());
+                strcpy(dbpath, availableProjects_[currentSelectedProject_].databaseName.toLatin1().data());
                 bool success = sshInterface_.getResultSets(dbpath, IDs, resultsets);
 
                 if(success)

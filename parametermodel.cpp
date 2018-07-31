@@ -183,11 +183,12 @@ bool ParameterModel::setData(const QModelIndex & index, const QVariant & value, 
 
 void ParameterModel::handleClick(const QModelIndex &index)
 {
+    const Parameter *par = getParameterAtRow(index.row());
     //NOTE: we override editing for bool types so that click means a toggle of the value.
-    if(index.column() == 1 && getTypeOfRow(index.row()) == parametertype_bool)
+    if(index.column() == 1 && par->type == parametertype_bool)
     {
         //qDebug() << "click";
-        parameter_value oldVal = getRawValue(index.row());
+        parameter_value oldVal = par->value;
         setData(index, QVariant((qulonglong)!oldVal.val_bool), Qt::EditRole);
         emit dataChanged(index, index); //NOTE: this is to signal the view to update, otherwise there is a small lag.
     }
@@ -208,7 +209,7 @@ bool ParameterModel::areAllParametersInRange() const
     for(auto& key_value : IDtoParam_)
     {
         Parameter* param = key_value.second;
-        if(!param->IsInRange())
+        if(!param->isInRange())
         {
             result = false;
             break;
@@ -260,18 +261,11 @@ void ParameterModel::setChildrenVisible(int parentID)
     }
 }
 
-//NOTE: this should only be used by the LineEditDelegate (or by this class itself)
-parameter_type ParameterModel::getTypeOfRow(int row) const
+//NOTE: this should only be used by the edit delegate (or by this class itself)
+const Parameter *ParameterModel::getParameterAtRow(int row) const
 {
     int ID = visibleParamID_[row];
-    return IDtoParam_.at(ID)->type;
-}
-
-//NOTE: this should only be used by the LineEditDelegate (or by this class itself)
-parameter_value ParameterModel::getRawValue(int row) const
-{
-    int ID = visibleParamID_[row];
-    return IDtoParam_.at(ID)->value;
+    return IDtoParam_.at(ID);
 }
 
 

@@ -7,10 +7,17 @@ Parameter::Parameter(const QString& name, int ID, int parentID, const parameter_
     this->name = name;
     this->ID = ID;
     this->parentID = parentID;
-    this->type = (parameter_type)entry.type;
-    this->min = entry.min;
-    this->max = entry.max;
-    this->value = entry.value;
+    type = (parameter_type)entry.type;
+    min = entry.min;
+    max = entry.max;
+    value = entry.value;
+
+    if(this->type == parametertype_ptime)
+    {
+        Parameter::clipTimeValue(min);
+        Parameter::clipTimeValue(max);
+        Parameter::clipTimeValue(value);
+    }
 }
 
 bool Parameter::isValidValue(const QString &valueVar)
@@ -116,9 +123,7 @@ QString Parameter::getValueDisplayString(parameter_value value, parameter_type t
 
     case parametertype_ptime:
     {
-        if(value.val_ptime > std::numeric_limits<qint64>::max() / 1000) return QString("Infinite");
-        if(value.val_ptime < std::numeric_limits<qint64>::min() / 1000) return QString("-Infinite");
-        QDateTime date = QDateTime::fromSecsSinceEpoch(value.val_ptime);
+        QDate date = Parameter::valueAsQDate(value);
         return QLocale().toString(date, "d. MMMM yyyy");
     } break;
 
@@ -129,6 +134,25 @@ QString Parameter::getValueDisplayString(parameter_value value, parameter_type t
 
     }
     return "";
+}
+
+QDate Parameter::valueAsQDate(parameter_value value)
+{
+    return QDateTime::fromSecsSinceEpoch(value.val_ptime).date();
+}
+
+void Parameter::clipTimeValue(parameter_value &value)
+{
+    //NOTE: The range of valid seconds for a QDateTime may vary on different architectures, so if we are unlucky, this clipping may not be good enough.
+
+    if(value.val_ptime > std::numeric_limits<qint64>::max() / 10000)
+    {
+        value.val_ptime = std::numeric_limits<qint64>::max() / 10000;
+    }
+    else if(value.val_ptime < std::numeric_limits<qint64>::min() / 10000)
+    {
+        value.val_ptime = std::numeric_limits<qint64>::min() / 10000;
+    }
 }
 
 int Parameter::isNotInRange(const parameter_value& newval)
