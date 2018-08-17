@@ -13,12 +13,12 @@
 #include <QFile>
 #include <QHBoxLayout>
 #include <QLabel>
+#include "plotter.h"
 
 
 namespace Ui {
 class MainWindow;
 }
-
 
 class MainWindow : public QMainWindow
 {
@@ -76,12 +76,12 @@ private:
     ParameterModel *parameterModel_;
     ParameterEditDelegate *lineEditDelegate;
 
+    Plotter *plotter_;
+
     const char *keyPath_;
 
     bool parametersHaveBeenEditedSinceLastSave_ = false;
     bool weExpectToBeConnected_ = false;
-
-    QVector<QColor> graphColors_;
 
     QVector<ParameterEditAction> editUndoStack_;
 

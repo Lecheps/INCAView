@@ -7,6 +7,8 @@ QMAKE_CXXFLAGS += -std=c++11
 
 QT       += core gui sql widgets printsupport
 
+#CONFIG += static
+
 #greaterThan(QT_MAJOR_VERSION, 5): QT += widgets printsupport
 
 TARGET = INCAView
@@ -21,7 +23,8 @@ SOURCES += main.cpp\
     parameter.cpp \
     parametermodel.cpp \
     sshInterface.cpp \
-    parametereditdelegate.cpp
+    parametereditdelegate.cpp \
+    plotter.cpp
 
 HEADERS  += mainwindow.h \
     treemodel.h \
@@ -31,7 +34,8 @@ HEADERS  += mainwindow.h \
     parametermodel.h \
     sshInterface.h \
     sqlhandler/parameterserialization.h \
-    parametereditdelegate.h
+    parametereditdelegate.h \
+    plotter.h
 
 FORMS    += mainwindow.ui
 
