@@ -1,6 +1,7 @@
 #ifndef PARAMETERSERIALIZATION_H
 #define PARAMETERSERIALIZATION_H
 
+#include <stdint.h>
 
 #pragma pack(push, 1)
 

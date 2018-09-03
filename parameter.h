@@ -18,6 +18,7 @@ public:
     static QString getValueDisplayString(parameter_value value, parameter_type type, int precision = 10);
     static QDate valueAsQDate(parameter_value value);
     static void clipTimeValue(parameter_value &value);
+    static parameter_type parseType(QString &string);
 
 
     QString name;

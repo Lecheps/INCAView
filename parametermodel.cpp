@@ -148,7 +148,7 @@ bool ParameterModel::setData(const QModelIndex & index, const QVariant & value, 
                 bool valueWasChanged = false;
                 if(param->type == parametertype_ptime)
                 {
-                    valueWasChanged = timeVal == param->value.val_ptime;
+                    valueWasChanged = timeVal != param->value.val_ptime;
                     param->value.val_ptime = timeVal;
                 }
                 else if(param->type == parametertype_bool)

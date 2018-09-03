@@ -10,11 +10,7 @@ MainWindow::MainWindow(QWidget *parent) :
 {
     ui->setupUi(this);
 
-    //TODO: This should not be hard coded, at least not to this path:
-    keyPath_ = "C:\\testkeys\\magnusKey";
-
-    ui->lineEditIP->setText("35.197.248.13");
-    ui->lineEditUsername->setText("magnus");
+    ui->lineEditUsername->setText("magnus"); //TODO: last login name should maybe be stored in a file
 
     treeParameters_ = 0;
     treeResults_ = 0;
@@ -36,6 +32,8 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->tableViewParameters->setItemDelegateForColumn(1, lineEditDelegate);
     ui->tableViewParameters->verticalHeader()->hide();
     ui->tableViewParameters->setEditTriggers(QAbstractItemView::AllEditTriggers);
+
+    ui->pushSaveParameters->setEnabled(false);
 
     ui->treeViewResults->setSelectionMode(QTreeView::ExtendedSelection); // Allows to ctrl-select multiple items.
 
@@ -59,26 +57,27 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->widgetPlotResults->axisRect(0)->setRangeZoom(Qt::Horizontal);
     //NOTE: If we want a rectangle zoom for the plot, look at http://www.qcustomplot.com/index.php/support/forum/227
 
-    QObject::connect(ui->widgetPlotResults, QCustomPlot::mouseMove, this, &MainWindow::updateGraphToolTip);
+    QObject::connect(ui->widgetPlotResults, &QCustomPlot::mouseMove, this, &MainWindow::updateGraphToolTip);
 
-    QObject::connect(&sshInterface_, &SSHInterface::log, this, &MainWindow::log);
-    QObject::connect(&sshInterface_, &SSHInterface::logError, this, &MainWindow::logSSHError);
-    QObject::connect(&sshInterface_, &SSHInterface::runINCAFinished, this, &MainWindow::onRunINCAFinished);
-    QObject::connect(&sshInterface_, &SSHInterface::runINCAError, this, &MainWindow::handleRunINCAError);
+    sshInterface_ = new SSHInterface("35.198.76.72", "magnus", "hubkey"); //NOTE: We have to think about whether the login info for the hub should be hard coded.
+
+    QObject::connect(sshInterface_, &SSHInterface::log, this, &MainWindow::log);
+    QObject::connect(sshInterface_, &SSHInterface::logError, this, &MainWindow::logSSHError);
+    QObject::connect(sshInterface_, &SSHInterface::runINCAFinished, this, &MainWindow::onRunINCAFinished);
+    QObject::connect(sshInterface_, &SSHInterface::runINCAError, this, &MainWindow::handleRunINCAError);
 
     ui->progressBarRunInca->setVisible(false);
 
-    ui->comboBoxSelectProject->addItem(tr("<None>"));
-
-    QObject::connect(ui->comboBoxSelectProject, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::handleModelSelect);
-
-
     plotter_ = new Plotter(ui->widgetPlotResults, ui->textResultsInfo);
+
+
 }
 
 MainWindow::~MainWindow()
 {
     delete ui;
+    delete plotter_;
+    delete sshInterface_;
 }
 
 void MainWindow::log(const QString& Message)
@@ -99,21 +98,20 @@ void MainWindow::logSSHError(const QString& message)
     logError(message);
 
     //TODO: We may want to do this regularly in some other way instead. It is not too reliable to do it here.. Maybe put it on a regular timer that is called once in a while.
-    if(weExpectToBeConnected_ && !sshInterface_.isSessionConnected())
+    if(weExpectToBeConnected_ && !sshInterface_->isInstanceConnected())
     {
-        const char *disconnectionMessage = sshInterface_.getDisconnectionMessage();
+        const char *disconnectionMessage = sshInterface_->getDisconnectionMessage();
         logError(QString("SSH Disconnected:") + disconnectionMessage);
         handleInvoluntarySSHDisconnect();
     }
 }
 
 void MainWindow::resetWindowTitle()
-{ 
+{
+    //TODO: this should reflect both connection status and what db we have loaded.
     if(weExpectToBeConnected_)
     {
-        QString dbpath = "";
-        if(currentSelectedProject_ >= 0) dbpath = availableProjects_[currentSelectedProject_].databaseName;
-        QString titlepath = QString("%1@%2:~/%3").arg(ui->lineEditUsername->text()).arg(ui->lineEditIP->text()).arg(dbpath);
+        QString titlepath = QString("%1/%2").arg(ui->lineEditUsername->text()).arg(selectedProjectDbPath_);
         if(parametersHaveBeenEditedSinceLastSave_)
         {
             setWindowTitle("*" + titlepath + " - INCAView");
@@ -134,31 +132,22 @@ void MainWindow::on_pushConnect_clicked()
     // we don't want them to be enabled for the half second the connection takes.
     ui->pushConnect->setEnabled(false);
     ui->lineEditUsername->setEnabled(false);
-    ui->lineEditIP->setEnabled(false);
 
-    QByteArray name = ui->lineEditUsername->text().toLatin1();
-    QByteArray ip = ui->lineEditIP->text().toLatin1();
+    QByteArray username = ui->lineEditUsername->text().toLatin1();
 
-    log(QString("Attempting to connect to ") + name.data() + "@" + ip.data() + " ...");
+    //TODO: Check that username is a single word in lower caps or with '-'.
 
-    bool success = sshInterface_.connectSession(name.data(), ip.data(), keyPath_);
+    QString instancename = QString("incaview-") + username.data();
+    QByteArray instancename2 = instancename.toLatin1();
+
+    log(QString("Attempting to create a google compute instance for ") + username.data() + ". This may take a few seconds ...");
+
+    //bool success = sshInterface_->connectSession(name.data(), ip.data(), keyPath_);
+    bool success = sshInterface_->createInstance(username.data(), instancename2.data());
 
     if(success)
     {
-        log("Connection successful. Select a project.");
-
-        //TODO: Load the list of projects from the server. Each project should be tied to a specific user. One should be able to create new projects from a list of models.
-        if(!availableProjects_.count())
-        {
-            sshInterface_.getProjectList("projects.db", name.data(), availableProjects_);
-        }
-
-        ui->comboBoxSelectProject->clear();
-        ui->comboBoxSelectProject->addItem(tr("<None>"));
-        for(ProjectSpec &project : availableProjects_)
-        {
-            ui->comboBoxSelectProject->addItem(project.name);
-        }
+        log("Connection successful");
 
         toggleWeExpectToBeConnected(true);
     }
@@ -170,125 +159,99 @@ void MainWindow::on_pushConnect_clicked()
     }
 }
 
-void MainWindow::handleModelSelect(int index)
+
+void MainWindow::on_pushLoadProject_clicked()
 {
-    if(weExpectToBeConnected_) //NOTE: The combo box should be disabled if we are not expecting to be connected, so this test is just to be safe.
+    QString fileName = QFileDialog::getOpenFileName(this,
+        tr("Open project database"), "", tr("Database files (*.db)"));
+    //TODO: test that the user did not click cancel etc.
+
+    bool success = projectDb_.setDatabase(fileName);
+    selectedProjectDbPath_ = fileName;
+    if(success)
     {
-        if(sshInterface_.isSessionConnected())
+        loadParameterData();
+
+        ui->pushLoadProject->setEnabled(false); //TODO: we should have a way of closing a project database in order to open a new one.
+
+        ui->treeViewParameters->expandToDepth(3);
+        ui->treeViewParameters->resizeColumnToContents(0);
+        ui->treeViewParameters->setColumnHidden(1, true);
+
+        if(sshInterface_->isInstanceConnected()) ui->pushRun->setEnabled(true);
+
+        toggleParametersHaveBeenEditedSinceLastSave(false);
+
+        resetWindowTitle();
+    }
+    else
+    {
+        //TODO: error handling
+    }
+
+}
+
+void MainWindow::loadParameterData()
+{
+    if(projectDb_.databaseIsSet())
+    {
+        log("Loading parameter structure...");
+
+        parameterModel_ = new ParameterModel();
+        treeParameters_ = new TreeModel("Parameter Structure");
+
+        std::map<uint32_t, parameter_min_max_val_serial_entry> IDtoParam;
+        projectDb_.getParameterValuesMinMax(IDtoParam);
+
+        QVector<TreeData> structuredata;
+        projectDb_.getParameterStructure(structuredata);
+        for(TreeData& data : structuredata)
         {
-            if(index >= 0 && index <= availableProjects_.size())
+            auto parref = IDtoParam.find(data.ID);
+            if(parref == IDtoParam.end())
             {
-                //TODO: If we have edited parameters, we should query the user if they want to change model without saving parameters.
-
-                //TODO: If we previously had an involuntary disconnect, we may want to keep the state of the models and allow the user to reconnect without reloading the state.
-                if(treeParameters_) delete treeParameters_;
-                if(treeResults_) delete treeResults_;
-                if(parameterModel_) delete parameterModel_;
-                treeParameters_ = 0;
-                treeResults_ = 0;
-                parameterModel_ = 0;
-
-                toggleParametersHaveBeenEditedSinceLastSave(false);
-                clearGraphsAndResultSummary();
-                editUndoStack_.clear();
-
-                currentSelectedProject_ = index-1; //NOTE: index=0 is the <None> option. So index=1 refers to element 0 of our model list.
-                if(currentSelectedProject_ >= 0 && currentSelectedProject_ < availableProjects_.size())
-                {
-                    log("Loading project: " + availableProjects_[currentSelectedProject_].name);
-                    loadModelData();
-
-                    ui->treeViewParameters->expandToDepth(3);
-                    ui->treeViewParameters->resizeColumnToContents(0);
-                    ui->treeViewResults->expandToDepth(1);
-                    ui->treeViewResults->resizeColumnToContents(0);
-                    ui->treeViewParameters->setColumnHidden(1, true);
-                    ui->treeViewResults->setColumnHidden(1, true);
-
-                    ui->pushRun->setEnabled(true);
-
-                    ui->radioButtonDaily->setEnabled(true);
-                    ui->radioButtonMonthlyAverages->setEnabled(true);
-                    ui->radioButtonYearlyAverages->setEnabled(true);
-                    ui->radioButtonErrors->setEnabled(true);
-                    ui->radioButtonErrorHistogram->setEnabled(true);
-                    ui->radioButtonErrorNormalProbability->setEnabled(true);
-                }
-                else
-                {
-                    //NOTE: We have selected the "<None>" option;
-                    ui->pushRun->setEnabled(false);
-                    ui->pushSaveParameters->setEnabled(false);
-
-                    ui->radioButtonDaily->setEnabled(false);
-                    ui->radioButtonMonthlyAverages->setEnabled(false);
-                    ui->radioButtonYearlyAverages->setEnabled(false);
-                    ui->radioButtonErrors->setEnabled(false);
-                    ui->radioButtonErrorHistogram->setEnabled(false);
-                    ui->radioButtonErrorNormalProbability->setEnabled(false);
-                }
-
-                resetWindowTitle();
+                //This ID corresponds to something that does not have a value (i.e. an indexer or index), and so we add it to the tree structure.
+                treeParameters_->addItem(data);
+            }
+            else
+            {
+                //This ID corresponds to something that has a value (i.e. a parameter), and so we add it to the parameter model.
+                parameter_min_max_val_serial_entry& par = parref->second;
+                parameterModel_->addParameter(data.name, data.ID, data.parentID, par);
             }
         }
-        else
-        {
-            handleInvoluntarySSHDisconnect();
-        }
+
+        ui->tableViewParameters->setModel(parameterModel_);
+        ui->treeViewParameters->setModel(treeParameters_);
+
+        QObject::connect(parameterModel_, &ParameterModel::parameterWasEdited, this, &MainWindow::parameterWasEdited);
+        QObject::connect(ui->treeViewParameters->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateParameterView);
+        QObject::connect(ui->tableViewParameters, &QTableView::clicked, parameterModel_, &ParameterModel::handleClick);
+
+        log("Loading complete");
+    }
+    else
+    {
+        logError("Tried to load parameter data without having a valid project database.");
     }
 }
 
-void MainWindow::loadModelData()
+void MainWindow::loadResultStructure(const char *remotedbpath)
 {
-    log("Loading parameter and results structures...");
+    if(treeResults_) delete treeResults_;
 
-    parameterModel_ = new ParameterModel();
-    treeParameters_ = new TreeModel("Parameter Structure");
     treeResults_ = new TreeModel("Results Structure");
 
-    //TODO: Just in case something goes wrong when loading from the remote database here, we should really do some more error handling.
-    QByteArray dbpath = availableProjects_[currentSelectedProject_].databaseName.toLatin1();
-
-    //NOTE: Loading in the results structure tree:
     QVector<TreeData> resultstreedata;
-    sshInterface_.getResultsStructure(dbpath.data(), resultstreedata);
+    sshInterface_->getResultsStructure(remotedbpath, resultstreedata);
     for(TreeData& item : resultstreedata)
     {
         treeResults_->addItem(item);
     }
 
-    //NOTE: loading in the parameter structure tree and the parameter value data
-    std::map<uint32_t, parameter_min_max_val_serial_entry> IDtoParam;
-    sshInterface_.getParameterValuesMinMax(dbpath.data(), IDtoParam);
-
-    QVector<TreeData> structuredata;
-    sshInterface_.getParameterStructure(dbpath.data(), structuredata);
-    for(TreeData& data : structuredata)
-    {
-        auto parref = IDtoParam.find(data.ID);
-        if(parref == IDtoParam.end())
-        {
-            //This ID corresponds to something that does not have a value (i.e. an indexer or index), and so we add it to the tree structure.
-            treeParameters_->addItem(data);
-        }
-        else
-        {
-            //This ID corresponds to something that has a value (i.e. a parameter), and so we add it to the parameter model.
-            parameter_min_max_val_serial_entry& par = parref->second;
-            parameterModel_->addParameter(data.name, data.ID, data.parentID, par);
-        }
-    }
-
-    ui->tableViewParameters->setModel(parameterModel_);
-    ui->treeViewParameters->setModel(treeParameters_);
     ui->treeViewResults->setModel(treeResults_);
 
-    QObject::connect(parameterModel_, &ParameterModel::parameterWasEdited, this, &MainWindow::parameterWasEdited);
-    QObject::connect(ui->treeViewParameters->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateParameterView);
     QObject::connect(ui->treeViewResults->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateGraphsAndResultSummary);
-    QObject::connect(ui->tableViewParameters, &QTableView::clicked, parameterModel_, &ParameterModel::handleClick);
-
-    log("Loading complete");
 }
 
 void MainWindow::toggleWeExpectToBeConnected(bool connected)
@@ -299,20 +262,15 @@ void MainWindow::toggleWeExpectToBeConnected(bool connected)
     {
         ui->pushConnect->setEnabled(false);
         ui->lineEditUsername->setEnabled(false);
-        ui->lineEditIP->setEnabled(false);
         ui->pushDisconnect->setEnabled(true);
-
-        ui->comboBoxSelectProject->setEnabled(true);
+        if(projectDb_.databaseIsSet()) ui->pushRun->setEnabled(true);
     }
     else
     {
         ui->pushConnect->setEnabled(true);
         ui->lineEditUsername->setEnabled(true);
-        ui->lineEditIP->setEnabled(true);
         ui->pushDisconnect->setEnabled(false);
         ui->pushRun->setEnabled(false);
-        ui->comboBoxSelectProject->setEnabled(false);
-        ui->pushSaveParameters->setEnabled(false);
         ui->radioButtonDaily->setEnabled(false);
         ui->radioButtonMonthlyAverages->setEnabled(false);
         ui->radioButtonYearlyAverages->setEnabled(false);
@@ -326,19 +284,13 @@ void MainWindow::toggleWeExpectToBeConnected(bool connected)
 
 void MainWindow::on_pushDisconnect_clicked()
 {
-    //TODO: If stuffHasBeenEditedSinceLastSave, query the user if they really want to disconnect without saving?
-
-    sshInterface_.disconnectSession();
+    bool success = sshInterface_->destroyInstance();
+    //TODO: If we were not successful destroying the instance, what do we do?
 
     toggleWeExpectToBeConnected(false);
-    toggleParametersHaveBeenEditedSinceLastSave(false);
 
-    if(treeParameters_) delete treeParameters_; //NOTE: The destructor of the QAbstractItemModel automatically disconnects it from it's view.
-    if(treeResults_) delete treeResults_;
-    if(parameterModel_) delete parameterModel_;
-    treeParameters_ = 0;
+    if(treeResults_) delete treeResults_; //NOTE: The destructor of the QAbstractItemModel automatically disconnects it from it's view.
     treeResults_ = 0;
-    parameterModel_ = 0;
 
     clearGraphsAndResultSummary();
 }
@@ -347,15 +299,9 @@ void MainWindow::on_pushDisconnect_clicked()
 void MainWindow::handleInvoluntarySSHDisconnect()
 {
     toggleWeExpectToBeConnected(false);
-    toggleParametersHaveBeenEditedSinceLastSave(false);
 
-    //TODO: We need to decide what we want to to the state of the parameter model and tree models. Should we allow the user to keep them in case they have unsaved data?
-    if(treeParameters_) delete treeParameters_; //NOTE: The destructor of the QAbstractItemModel automatically disconnects it from it's view.
-    if(treeResults_) delete treeResults_;
-    if(parameterModel_) delete parameterModel_;
-    treeParameters_ = 0;
+    if(treeResults_) delete treeResults_; //NOTE: The destructor of the QAbstractItemModel automatically disconnects it from it's view.
     treeResults_ = 0;
-    parameterModel_ = 0;
 
     clearGraphsAndResultSummary();
 
@@ -371,15 +317,21 @@ void MainWindow::on_pushSaveParameters_clicked()
 
         //NOTE: Serialize parameter values and send them to the remote database
         QVector<parameter_serial_entry> parameterdata;
-        parameterModel_->serializeParameterData(parameterdata); //NOTE: we should probably only save the parameters that have been changed instead of all of them..
-        //TODO: We should probably do some error handling here.
-        QByteArray dbpath = availableProjects_[currentSelectedProject_].databaseName.toLatin1();
-        sshInterface_.writeParameterValues(dbpath.data(), parameterdata);
-        toggleParametersHaveBeenEditedSinceLastSave(false);
+        parameterModel_->serializeParameterData(parameterdata); //TODO: we should probably only save the parameters that have been changed instead of all of them..
 
-        editUndoStack_.clear();
+        bool success = projectDb_.writeParameterValues(parameterdata);
+        if(success)
+        {
+            toggleParametersHaveBeenEditedSinceLastSave(false);
 
-        log("Saving parameters complete."); //NOTE: Will look silly if there is an error in between...
+            editUndoStack_.clear();
+
+            log("Saving parameters complete.");
+        }
+        else
+        {
+            //TODO: We should probably do some error handling here.
+        }
     }
 }
 
@@ -388,7 +340,7 @@ void MainWindow::on_pushRun_clicked()
 {
     if(weExpectToBeConnected_) //NOTE: The button should also be disabled in this case. This check is just for safety
     {
-        if(sshInterface_.isSessionConnected())
+        if(sshInterface_->isInstanceConnected())
         {
             if(parameterModel_->areAllParametersInRange())
             {
@@ -418,16 +370,41 @@ void MainWindow::on_pushRun_clicked()
 
 void MainWindow::runModel()
 {
+    if(!projectDb_.databaseIsSet())
+    {
+        //TODO: error (though it shoudl not be possible to reach this state)
+        return;
+    }
+
+    if(weExpectToBeConnected_)
+    {
+        if(!sshInterface_->isInstanceConnected())
+        {
+            handleInvoluntarySSHDisconnect();
+            return;
+        }
+    }
+    else
+    {
+        //TODO: error (though it shoudl not be possible to reach this state)
+        return;
+    }
+
+
     ui->pushRun->setEnabled(false);
 
     log("Attempting to run INCA...");
 
     on_pushSaveParameters_clicked(); //NOTE: Save the parameters to the database.
 
+    //TODO: Upload the entire parameter database to the instance!
+    const char *remoteParameterDbName = "parameters.db";
+
+    QByteArray dbpath = selectedProjectDbPath_.toLatin1();
+    sshInterface_->uploadEntireFile(dbpath.data(), "~/", remoteParameterDbName);
+
     if(parameterModel_->timestepsLoaded_)
     {
-        //TODO: Find out if the parameter called "Timesteps" is actually used to set up the number of timesteps when the model is run!
-        //   Otherwise we need to get the correct number of timesteps in a different way.
         //TODO: We should retrieve the latest edited value for timesteps here (or update it in the parametermodel when it receives an edit).
         ui->progressBarRunInca->setMaximum(parameterModel_->timesteps_);
     }
@@ -436,26 +413,26 @@ void MainWindow::runModel()
         //TODO: What do we do?
     }
 
+    const char *remoteexepath = "bla.exe"; //TODO: This should probably be stored and read from the local database
 
-
-    if(currentSelectedProject_ >= 0 && currentSelectedProject_ < availableProjects_.size())
-    {
-        QByteArray name = ui->lineEditUsername->text().toLatin1();
-        QByteArray ip   = ui->lineEditIP->text().toLatin1();
-        QByteArray exe  = availableProjects_[currentSelectedProject_].exeName.toLatin1();
-        sshInterface_.runModel(name.data(), ip.data(), keyPath_, exe.data(), ui->progressBarRunInca);
-    }
-    else
-    {
-        logError("We got a command to run the model, even though no model was selected"); //NOTE: The way the ui is set up should prevent this from ever happening
-    }
+    //TODO: We probably should send info about what path we want for the remote result db?
+    //sshInterface_->runModel(remoteexepath, remoteParameterDbName, ui->progressBarRunInca);
 }
 
 void MainWindow::onRunINCAFinished()
 {
-    //NOTE: this is a slot that receives a signal from the sshInterface.
+    //NOTE: this is a slot that receives a signal from the sshInterface when it is complete.
 
     log("INCA run finished.");
+
+    const char *remoteResultDbPath = "results.db";
+
+    //NOTE: TODO: This may not be correct: In the future, the result structure may have changed after a new model run.
+    if(!treeResults_)
+    {
+        loadResultStructure(remoteResultDbPath);
+    }
+
     updateGraphsAndResultSummary(); //In case somebody had a graph selected, it is updated with a plot of the data generated from the last run.
     ui->pushRun->setEnabled(true);
 }
@@ -484,6 +461,9 @@ void MainWindow::closeEvent (QCloseEvent *event)
             event->accept();
         }
     }
+
+    bool success = sshInterface_->destroyInstance();
+    //TODO: If we were not successful destroying the instance, what do we do?
 }
 
 void MainWindow::updateParameterView(const QItemSelection& selected, const QItemSelection& deselected)
@@ -506,7 +486,7 @@ void MainWindow::updateGraphsAndResultSummary()
 {
     if(weExpectToBeConnected_)
     {
-        if(sshInterface_.isSessionConnected())
+        if(sshInterface_->isInstanceConnected())
         {
             QModelIndexList indexes = ui->treeViewResults->selectionModel()->selectedIndexes();
 
@@ -530,9 +510,20 @@ void MainWindow::updateGraphsAndResultSummary()
 
             if(IDs.count())
             {
+                PlotMode mode = PlotMode_Daily;
+                if(ui->radioButtonMonthlyAverages->isChecked()) mode = PlotMode_MonthlyAverages;
+                else if(ui->radioButtonYearlyAverages->isChecked()) mode = PlotMode_YearlyAverages;
+                else if(ui->radioButtonErrors->isChecked()) mode = PlotMode_Error;
+                else if(ui->radioButtonErrorHistogram->isChecked()) mode = PlotMode_ErrorHistogram;
+                else if(ui->radioButtonErrorNormalProbability->isChecked()) mode = PlotMode_ErrorNormalProbability;
+
+                QVector<int> uncachedIDs;
+                plotter_->whichIDsAreNotCached(IDs, uncachedIDs);
+
                 QVector<QVector<double>> resultsets;
-                QByteArray dbpath = availableProjects_[currentSelectedProject_].databaseName.toLatin1();
-                bool success = sshInterface_.getResultSets(dbpath.data(), IDs, resultsets);
+                //TODO: Formalize the paths to the remote databases in some way so that they are not just spread around in the code here.
+                const char *remoteResultDbPath = "results.db";
+                bool success = sshInterface_->getResultSets(remoteResultDbPath, uncachedIDs, resultsets);
 
                 if(success)
                 {
@@ -540,7 +531,7 @@ void MainWindow::updateGraphsAndResultSummary()
                     if(parameterModel_->startDateLoaded_)
                     {
                         //TODO: This is not reliable! A different start date could have been saved as a parameter since the last run.
-                        // instead we should have the start date stored along with the result set.
+                        // instead we should load the dates from the result set.
                         int64_t starttime = parameterModel_->startDate_;
                         date = QDateTime::fromSecsSinceEpoch(starttime);
                     }
@@ -550,18 +541,9 @@ void MainWindow::updateGraphsAndResultSummary()
                         date = QDateTime::currentDateTime();
                     }
 
-                    PlotMode mode = PlotMode_Daily;
-                    if(ui->radioButtonMonthlyAverages->isChecked()) mode = PlotMode_MonthlyAverages;
-                    else if(ui->radioButtonYearlyAverages->isChecked()) mode = PlotMode_YearlyAverages;
-                    else if(ui->radioButtonErrors->isChecked()) mode = PlotMode_Error;
-                    else if(ui->radioButtonErrorHistogram->isChecked()) mode = PlotMode_ErrorHistogram;
-                    else if(ui->radioButtonErrorNormalProbability->isChecked()) mode = PlotMode_ErrorNormalProbability;
-
-                    plotter_->plotGraphs(resultsets, resultNames, mode, date);
+                    plotter_->plotGraphs(IDs, resultNames, resultsets, uncachedIDs, mode, date);
                 }
             }
-
-            ui->widgetPlotResults->replot();
             updateGraphToolTip(0);
         }
         else

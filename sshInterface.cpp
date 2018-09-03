@@ -5,12 +5,13 @@
 
 //NOTE: Useful blog post on using QThread: https://mayaposch.wordpress.com/2011/11/01/how-to-really-truly-use-qthreads-the-full-explanation/
 
-//Important TODO: Find a way to generate temp file names that are specific to each user, don't use "data.dat". Also, there should be a way to clean these
-// files up after use. Alternatively, find a different way of sending binary data.
-
-SSHInterface::SSHInterface()
+SSHInterface::SSHInterface(const char *hubIp, const char *hubUsername, const char *hubKey)
 {
     session_ = 0;
+
+    hubIp_ = hubIp;
+    hubUsername_ = hubUsername;
+    hubKey_ = hubKey;
 
     //NOTE: This initialization code should only be run once, so we can't
     // allow multiple instances of this class. This should not be a problem,
@@ -21,8 +22,8 @@ SSHInterface::SSHInterface()
     //ssh_threads_set_callbacks(ssh_threads_get_pthread()); //NOTE: QThread is supposedly based on pthread, so this should hopefully work!
     ssh_init();
 
-    Q_ASSERT(sizeof(double)==8); //NOTE: If sizeof(double) != 8 on a potential user architecture, someone has to write reformatting code for the data. (Very unlikely)
-    Q_ASSERT(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__); //NOTE: If we are on a big endian user architecture, we also have to write reformatting code! (unlikely)
+    Q_ASSERT(sizeof(double) == 8); //NOTE: If sizeof(double) != 8 on a potential user architecture, someone has to write reformatting code for the data. (Very unlikely)
+    Q_ASSERT(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__); //NOTE: If we are on a big endian user architecture, we also have to write reformatting code! (Very unlikely)
 
     ssh_set_log_userdata(this);
     ssh_set_log_level(SSH_LOG_WARNING);
@@ -44,9 +45,16 @@ SSHInterface::~SSHInterface()
     incaWorkerThread_.quit();
     incaWorkerThread_.wait();
 
+    if(isSessionConnected() && loggedInToInstance_)
+    {
+       destroyInstance();
+    }
+
     if(isSessionConnected())
     {
-       disconnectSession(); //NOTE: This is for the main session. It will not close the INCARun session. However that should be handled by the RunIncaWorker destructor if all other signals are hooked up correctly.
+        //NOTE: This is for the main session. It will not close the INCARun session.
+        //  However that should be handled by the RunIncaWorker destructor if all other signals are hooked up correctly.
+        disconnectSession();
     }
 }
 
@@ -61,6 +69,173 @@ void SSHInterface::sshStatusCallback(void *data, float status)
 {
     qDebug() << "SSH status: " << status;
 }
+
+
+bool SSHInterface::createInstance(const char *username, const char *instancename)
+{
+    bool success = connectSession(hubUsername_.data(), hubIp_.data(), hubKey_.data());
+
+    if(!success)
+    {
+        return false;
+    }
+
+    loggedInToHub_ = true;
+
+
+    //TODO: Query the hub to see if an instance by the name instancename already exists.
+
+    char command[512];
+    sprintf(command, "./createinstance.sh %s %s", instancename, username);
+
+    std::stringstream output;
+    runCommand(command, output);
+    //std::string gotoutput = output.str();
+    //qDebug() << gotoutput.data();
+
+    //NOTE: Format of what we want to parse for the external ip. (NOTE HOWEVER: google state that they don't guarantee the format of output from gcloud to stay constant!!!)
+    // NAME             ZONE            MACHINE_TYPE   PREEMPTIBLE  INTERNAL_IP  EXTERNAL_IP    STATUS
+    // incaview-magnus  europe-west3-a  n1-standard-2               10.156.0.4   35.234.84.222  RUNNING
+
+    //NOTE: split on whitespace:
+    std::vector<std::string> words((std::istream_iterator<std::string>(output)),
+                                     std::istream_iterator<std::string>());
+
+    //NOTE: find the second word that looks like an ip address.
+    std::regex ippattern("[[:digit:]]+.[[:digit:]]+.[[:digit:]]+.[[:digit:]]+");
+    bool foundone = false;
+    bool foundtwo = false;
+    for(std::string& word : words)
+    {
+        if(std::regex_match(word, ippattern))
+        {
+            if(foundone)
+            {
+                instanceIp_ = word;
+                foundtwo = true;
+                break;
+            }
+            foundone = true;
+        }
+    }
+
+    if(!foundtwo)
+    {
+        emit logError("Something went wrong with creating an instance. Could not parse an external ip from output of gcloud command. Output was:");
+        emit logError(output.str().data());
+        return false;
+    }
+
+    instanceName_ = instancename;
+    instanceUser_ = username;
+
+    emit log(QString("Created compute instance with ip ") + instanceIp_.data());
+
+    //TODO: Error handling!!
+
+    //NOTE: download ssh keys for the instance.
+    std::string privkeyfilename = std::string("keys/") + username;
+    std::string pubkeyfilename = std::string("keys/") + username + ".pub";
+
+    void *filebuf;
+    size_t filebufsize;
+
+    //TODO: If we use the libssh library correctly, we may probably skip saving the keys to files here and instead provide the key data directly to libssh on the connect.
+    readFile(&filebuf, &filebufsize, privkeyfilename.data());
+    FILE *file = fopen("instancekey", "w");
+    fwrite(filebuf, filebufsize, 1, file);
+    fclose(file);
+    free(filebuf);
+
+    readFile(&filebuf, &filebufsize, pubkeyfilename.data());
+    file = fopen("instancekey.pub", "w");
+    fwrite(filebuf, filebufsize, 1, file);
+    fclose(file);
+    free(filebuf);
+
+    emit log("SSH keys to instance downloaded. Attempting to connect to instance...");
+
+    //NOTE: Disconnect from the hub
+    disconnectSession();
+
+    loggedInToHub_ = false;
+
+    int maxtries = 10;
+    //NOTE: Connect to the new instance
+    for(int i = 0; i < maxtries; ++i)
+    {
+        success = connectSession(username, instanceIp_.data(), "instancekey");
+        if(success)
+        {
+            break;
+        }
+        else if(i != maxtries-1)
+        {
+            emit log("Attempting to connect again...");
+        }
+    }
+    if(!success)
+    {
+        emit logError("Unable to connect");
+
+        destroyInstance();
+
+        return false;
+    }
+
+    loggedInToInstance_ = true;
+    instanceExists_ = true;
+
+    return true;
+}
+
+bool SSHInterface::destroyInstance()
+{
+    if(!instanceExists_) return true;
+
+
+    if(loggedInToInstance_ && isSessionConnected())
+    {
+        disconnectSession();
+        loggedInToInstance_ = false;
+    }
+
+    if(!loggedInToHub_ || !isSessionConnected())
+    {
+        bool success = connectSession(hubUsername_.data(), hubIp_.data(), hubKey_.data());
+        if(!success)
+        {
+            emit logError("SSH: Unable to connect to hub in order to destroy compute instance.");
+            return false;
+        }
+        loggedInToHub_ = true;
+    }
+
+    emit log(QString("SSH: Sending command to destroy compute instance ") + instanceName_.data());
+    emit log(QString("This may take a few seconds ..."));
+
+    char command[512];
+    sprintf(command, "./destroyinstance.sh %s", instanceName_.data());
+
+    std::stringstream out;
+    bool success = runCommand(command, out);
+
+    if(success)
+    {
+        //TODO: Parse output to see if gcloud reported a successful deletion?
+        emit log(QString("SSH: Successfully destroyed compute instance ") + instanceName_.data());
+    }
+
+    instanceExists_ = false;
+
+    return success;
+}
+
+bool SSHInterface::isInstanceConnected()
+{
+    return loggedInToInstance_ && isSessionConnected();
+}
+
 
 bool SSHInterface::connectSession(const char *user, const char *address, const char *keyfile)
 {
@@ -82,8 +257,8 @@ bool SSHInterface::connectSession(const char *user, const char *address, const c
 
         ssh_options_set(session_, SSH_OPTIONS_HOST, address);
         ssh_options_set(session_, SSH_OPTIONS_USER, user);
-        long timeoutSeconds = 1;
-        ssh_options_set(session_, SSH_OPTIONS_TIMEOUT, &timeoutSeconds);
+        //long timeoutSeconds = 1;
+        //ssh_options_set(session_, SSH_OPTIONS_TIMEOUT, &timeoutSeconds);
         //ssh_options_set(session_, SSH_OPTIONS_STATUS_CALLBACK, SSHInterface::sshStatusCallback); //HMM: does not seem to exist in the latest mingw binary version. We could get it by compiling the library ourselves.
 
         int rc = ssh_connect(session_);
@@ -139,6 +314,57 @@ const char * SSHInterface::getDisconnectionMessage()
     const char *message = ssh_get_disconnect_message(session_);
     if(!message) message = ssh_get_error(session_);
     return message;
+}
+
+bool SSHInterface::runCommand(const char *command, std::stringstream &out)
+{
+    //NOTE: The return value of this function only indicates whether or not the command was executed.
+    //  It does not say whether or not the program that was called ran successfully. For that one has
+    //  to parse the result buffer.
+    bool success = false;
+    if(isSessionConnected())
+    {
+        ssh_channel channel = ssh_channel_new(session_);
+        int rc = ssh_channel_open_session(channel);
+        if(rc != SSH_OK)
+        {
+            emit logError(QString("SSH: Failed to open channel: %1").arg(ssh_get_error(session_)));
+        }
+        else
+        {
+            ssh_channel_request_exec(channel, command);
+
+            int poll_rc;
+            char readData[256];
+
+            while((poll_rc = ssh_channel_poll(channel, 0)) != SSH_EOF)
+            {
+                if(poll_rc == SSH_ERROR)
+                {
+                    emit logError(QString("SSH: Error while reading from channel: %1").arg(ssh_get_error(session_)));
+                    break;
+                }
+                int rc = ssh_channel_read(channel, readData, sizeof(readData)-1, 0);
+                readData[rc] = 0;
+
+                if(rc > 0)
+                {
+                   out << readData;
+                }
+            }
+
+            success = true;
+
+            ssh_channel_close(channel);
+        }
+        ssh_channel_free(channel);
+    }
+    else
+    {
+        emit logError(QString("SSH: Tried to run command \"%1\" without having an open ssh session.").arg(command));
+    }
+
+    return success;
 }
 
 bool SSHInterface::runCommand(const char *command, char *resultbuffer, int bufferlen)
@@ -225,6 +451,59 @@ bool SSHInterface::writeFile(const void *contents, size_t contentssize, const ch
     {
         emit logError("SCP: Tried to run file writing command without having an open ssh session.");
     }
+
+    return success;
+}
+
+bool SSHInterface::uploadEntireFile(const char *localpath, const char *remotelocation, const char *remotefilename)
+{
+    uint8_t *filedata = 0;
+    FILE *file = fopen(localpath, "r");
+    if (!file)
+    {
+        emit logError(QString("Failed to open the file ") + localpath);
+        return false;
+    }
+
+    if (fseek(file, 0L, SEEK_END) != 0)
+    {
+        emit logError(QString("Error while reading the file 1 ") + localpath);
+        fclose(file);
+        return false;
+    }
+
+    long bufsize = ftell(file);
+    if (bufsize == -1)
+    {
+        emit logError(QString("Error while reading the file 2 ") + localpath);
+        fclose(file);
+        return false;
+    }
+
+    filedata = (uint8_t *)malloc((size_t)bufsize);
+
+    if (fseek(file, 0L, SEEK_SET) != 0)
+    {
+        emit logError(QString("Error while reading the file 3 ") + localpath);
+        free(filedata);
+        fclose(file);
+        return false;
+    }
+
+    size_t newLen = fread(filedata, 1, (size_t)bufsize, file);
+    if (newLen == 0)
+    {
+        emit logError(QString("Error while reading the file 4 ") + localpath);
+        free(filedata);
+        fclose(file);
+        return false;
+    }
+
+    fclose(file);
+
+    bool success = writeFile(filedata, (size_t)bufsize, remotelocation, remotefilename);
+
+    free(filedata);
 
     return success;
 }
@@ -350,18 +629,11 @@ bool SSHInterface::runSqlHandler(const char *command, const char *db, const char
 
 void SSHInterface::generateRandomTransactionFileName(char *outfilename, const char *dbname)
 {
-    quint32 number = QRandomGenerator::global()->generate(); //NOTE: No guarantee against collisions, but it is very unlikely. Ok when we just have a handful of users.
+    quint32 number = QRandomGenerator::global()->generate();
 
-    /*
-    const char *lastslash = dbname;
-    for(const char *c = dbname; *c; c++)
-    {
-        if(*c == '/' || *c == '\\') lastslash = c + 1;
-    }
-    */
     sprintf(outfilename, "tmp%u%s.dat", number, dbname);
 
-    qDebug() << "Generated transaction file name: " << outfilename;
+    //qDebug() << "Generated transaction file name: " << outfilename;
 }
 
 void SSHInterface::deleteTransactionFile(char *filename)
@@ -371,7 +643,7 @@ void SSHInterface::deleteTransactionFile(char *filename)
     runCommand(command, 0, 0);
 }
 
-
+/*
 void SSHInterface::getProjectList(const char *remoteDB, const char *username, QVector<ProjectSpec> &outdata)
 {
     char tmpname[256];
@@ -410,6 +682,7 @@ void SSHInterface::getProjectList(const char *remoteDB, const char *username, QV
 
     deleteTransactionFile(tmpname);
 }
+*/
 
 
 void SSHInterface::getStructureData(const char *remoteDB, const char *command, QVector<TreeData> &outdata)
@@ -453,7 +726,7 @@ void SSHInterface::getResultsStructure(const char *remoteDB, QVector<TreeData> &
     getStructureData(remoteDB, EXPORT_RESULTS_STRUCTURE_COMMAND, structuredata);
 }
 
-
+/*
 void SSHInterface::getParameterStructure(const char *remoteDB, QVector<TreeData> &structuredata)
 {
     getStructureData(remoteDB, EXPORT_PARAMETER_STRUCTURE_COMMAND, structuredata);
@@ -488,7 +761,7 @@ void SSHInterface::getParameterValuesMinMax(const char *remoteDB, std::map<uint3
 
     deleteTransactionFile(tmpname);
 }
-
+*/
 
 bool SSHInterface::getResultSets(const char *remoteDB, const QVector<int>& IDs, QVector<QVector<double>> &valuedata)
 {
@@ -555,7 +828,7 @@ bool SSHInterface::getResultSets(const char *remoteDB, const QVector<int>& IDs, 
     return success;
 }
 
-
+/*
 void SSHInterface::writeParameterValues(const char *remoteDB, QVector<parameter_serial_entry>& writedata)
 {
     char tmpname[256];
@@ -577,11 +850,16 @@ void SSHInterface::writeParameterValues(const char *remoteDB, QVector<parameter_
 
     deleteTransactionFile(tmpname);
 }
+*/
 
-
-void SSHInterface::runModel(const char *user, const char *address, const char *keyfile, const char *exename, QProgressBar *progressBar)
+void SSHInterface::runModel(const char *exename, const char *remoteDB, QProgressBar *progressBar)
 {
-    //TODO: This should also take a database name to run the model on.
+    if(!isInstanceConnected())
+    {
+        //NOTE: should never happen if interface behaves correctly
+        //TODO: log error
+        return;
+    }
 
     //NOTE: We have to create a new SSH session in the new thread. Two different threads can not use the same session in libssh,
     //or there is a risk of state corruption.
@@ -605,7 +883,8 @@ void SSHInterface::runModel(const char *user, const char *address, const char *k
 
     incaWorkerThread_.start();
 
-    worker->runModel(user, address, exename, keyfile);
+    //TODO: This should also take the name of the parameter database to use.
+    worker->runModel(instanceUser_.data(), instanceIp_.data(), exename, "instancekey");
 }
 
 

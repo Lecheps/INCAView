@@ -122,21 +122,21 @@
                <item>
                 <widget class="QRadioButton" name="radioButtonErrors">
                  <property name="text">
-                  <string>Error vs time</string>
+                  <string>Residuals vs time</string>
                  </property>
                 </widget>
                </item>
                <item>
                 <widget class="QRadioButton" name="radioButtonErrorHistogram">
                  <property name="text">
-                  <string>Error histogram</string>
+                  <string>Residual histogram</string>
                  </property>
                 </widget>
                </item>
                <item>
                 <widget class="QRadioButton" name="radioButtonErrorNormalProbability">
                  <property name="text">
-                  <string>Error normal probability</string>
+                  <string>Residual normal probability</string>
                  </property>
                 </widget>
                </item>
@@ -207,29 +207,16 @@ Values:</string>
          </widget>
         </item>
         <item>
-         <widget class="QComboBox" name="comboBoxSelectProject"/>
-        </item>
-        <item>
-         <widget class="QPushButton" name="pushRun">
-          <property name="toolTip">
-           <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Run INCA.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-          </property>
+         <widget class="QPushButton" name="pushLoadProject">
           <property name="text">
-           <string>Run model</string>
+           <string>Load project database</string>
           </property>
          </widget>
         </item>
         <item>
          <widget class="QPushButton" name="pushSaveParameters">
           <property name="text">
-           <string>Save parameters</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QProgressBar" name="progressBarRunInca">
-          <property name="value">
-           <number>0</number>
+           <string>Save parameter changes</string>
           </property>
          </widget>
         </item>
@@ -247,24 +234,14 @@ Values:</string>
          </spacer>
         </item>
         <item>
-         <widget class="QLineEdit" name="lineEditUsername">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QLabel" name="labelAt">
+         <widget class="QLabel" name="labelUsername">
           <property name="text">
-           <string>@</string>
+           <string>username:</string>
           </property>
          </widget>
         </item>
         <item>
-         <widget class="QLineEdit" name="lineEditIP">
+         <widget class="QLineEdit" name="lineEditUsername">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
             <horstretch>0</horstretch>
@@ -276,14 +253,31 @@ Values:</string>
         <item>
          <widget class="QPushButton" name="pushConnect">
           <property name="text">
-           <string>Connect to cloud</string>
+           <string>Create compute instance</string>
           </property>
          </widget>
         </item>
         <item>
          <widget class="QPushButton" name="pushDisconnect">
           <property name="text">
-           <string>Disconnect</string>
+           <string>Destroy instance</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="pushRun">
+          <property name="toolTip">
+           <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Run INCA.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+          </property>
+          <property name="text">
+           <string>Run model</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QProgressBar" name="progressBarRunInca">
+          <property name="value">
+           <number>0</number>
           </property>
          </widget>
         </item>
@@ -315,7 +309,6 @@ Values:</string>
   </customwidget>
  </customwidgets>
  <tabstops>
-  <tabstop>pushRun</tabstop>
   <tabstop>treeViewParameters</tabstop>
  </tabstops>
  <resources/>

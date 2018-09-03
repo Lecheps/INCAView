@@ -4,7 +4,17 @@
 double NormalCDFInverse(double p);
 double NormalCDF(double x);
 
-void Plotter::plotGraphs(const QVector<QVector<double>>& resultsets, const QVector<QString>& resultnames, PlotMode mode, QDateTime date)
+
+void Plotter::whichIDsAreNotCached(const QVector<int>& IDs, QVector<int>& uncachedOut)
+{
+    for(int ID : IDs)
+    {
+        auto find = cache_.find(ID);
+        if(find == cache_.end()) uncachedOut.push_back(ID);
+    }
+}
+
+void Plotter::plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString>& allresultnames, const QVector<QVector<double>>& uncachedresultsets, const QVector<int>& uncachedIDs, PlotMode mode, QDateTime date)
 {
     //NOTE: Right now we just throw out all previous graphs and re-create everything. We could keep track of which ID corresponds to which graph (in which plot mode)
     // and then only update/create the graphs that have changed. However, this should only be necessary if this routine runs very slowly on some user machines.
@@ -12,15 +22,25 @@ void Plotter::plotGraphs(const QVector<QVector<double>>& resultsets, const QVect
     resultsInfo_->clear();
     int64_t starttime = date.toSecsSinceEpoch();
 
+    for(int i = 0; i < uncachedresultsets.count(); ++i)
+    {
+        int ID = uncachedIDs[i];
+        cache_[ID] = uncachedresultsets[i];
+    }
+
     if(mode == PlotMode_Daily || mode == PlotMode_MonthlyAverages || mode == PlotMode_YearlyAverages)
     {
         double minyrange = 0.0;
         double maxyrange = 0.0;
 
         int firstunassignedcolor = 0;
-        for(int i = 0; i < resultsets.count(); ++i)
+
+        for(int i = 0; i < allIDsToPlot.count(); ++i)
         {
-            const QVector<double>& yval = resultsets[i];
+
+            int ID = allIDsToPlot[i];
+
+            const QVector<double>& yval = cache_[i];
             int cnt = yval.count();
             QVector<double> xval(cnt);
 
@@ -56,7 +76,7 @@ void Plotter::plotGraphs(const QVector<QVector<double>>& resultsets, const QVect
                         "average: %5<br/>"
                         "standard deviation: %6<br/>"
                         "<br/>"
-                      ).arg(resultnames[i], color.name())
+                      ).arg(allresultnames[i], color.name())
                        .arg(min, 0, 'g', 5)
                        .arg(max, 0, 'g', 5)
                        .arg(mean, 0, 'g', 5)
@@ -159,12 +179,15 @@ void Plotter::plotGraphs(const QVector<QVector<double>>& resultsets, const QVect
     }
     else //mode == PlotMode_Error || mode == PlotMode_ErrorNormalProbability || mode == PlotMode_ErrorHistogram
     {
-        if(resultsets.count() == 2)
+        if(allIDsToPlot.count() == 2)
         {
-            const QVector<double>& observed = resultsets[0];
-            const QVector<double>& modeled = resultsets[1];
-            QString observedName = resultnames[0];
-            QString modeledName = resultnames[1];
+            int ID0 = allIDsToPlot[0];
+            int ID1 = allIDsToPlot[1];
+
+            const QVector<double>& observed = cache_[ID0];
+            const QVector<double>& modeled = cache_[ID1];
+            QString observedName = allresultnames[0];
+            QString modeledName = allresultnames[1];
 
             //TODO: Should we give a warning if the count of the two sets are not equal?
             int count = std::min(observed.count(), modeled.count());
@@ -230,7 +253,7 @@ void Plotter::plotGraphs(const QVector<QVector<double>>& resultsets, const QVect
                 errorvariance += (errors[i] - meanerror)*(errors[i] - meanerror);
                 xycovariance += (xval[i] - meanx)*(errors[i] - meanerror);
             }
-            double sigma = std::sqrt(errorvariance);
+            //double sigma = std::sqrt(errorvariance);
 
             if(mode == PlotMode_Error)
             {
@@ -305,7 +328,7 @@ void Plotter::plotGraphs(const QVector<QVector<double>>& resultsets, const QVect
                 double invcount = 1.0 / (double)count;
                 for(int i = 0; i < count; ++i)
                 {
-                    int bin = floor((errors[i]-min)/range);
+                    int bin = (int)floor((errors[i]-min)/range);
                     if(bin >= numbins) bin = numbins - 1; //NOTE: will happen with the max value;
                     if(bin < 0) bin = 0; //NOTE: SHOULD not happen.
                     valuebins[bin] += invcount;
@@ -327,6 +350,8 @@ void Plotter::plotGraphs(const QVector<QVector<double>>& resultsets, const QVect
             }
         }
     }
+    
+    plot_->replot();
 }
 
 

@@ -14,6 +14,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include "plotter.h"
+#include "sqlinterface.h"
 
 
 namespace Ui {
@@ -33,6 +34,7 @@ private slots:
     void on_pushConnect_clicked();
     void on_pushDisconnect_clicked();
     void on_pushRun_clicked();
+    void on_pushLoadProject_clicked();
     void on_pushSaveParameters_clicked();
     void closeEvent (QCloseEvent *);
 
@@ -40,7 +42,7 @@ private slots:
     void updateGraphsAndResultSummary();
     void clearGraphsAndResultSummary();
 
-    void handleModelSelect(int index);
+    //void handleModelSelect(int index);
 
     void copyToClipboard(bool);
     void undo(bool);
@@ -56,16 +58,10 @@ private slots:
 
 private:
     void toggleParametersHaveBeenEditedSinceLastSave(bool);
-
     void runModel();
-
     void toggleWeExpectToBeConnected(bool);
-
-    void loadModelData();
-
-    //static bool copyAndOverwriteFile(const QString&, const QString&);
-    //bool saveCheckParameters();
-    //bool tryToSave(const QString&, const QString&);
+    void loadParameterData();
+    void loadResultStructure(const char *remotedbpath);
 
     void resetWindowTitle();
 
@@ -78,17 +74,15 @@ private:
 
     Plotter *plotter_;
 
-    const char *keyPath_;
-
     bool parametersHaveBeenEditedSinceLastSave_ = false;
     bool weExpectToBeConnected_ = false;
 
     QVector<ParameterEditAction> editUndoStack_;
 
-    QVector<ProjectSpec> availableProjects_;
-    int currentSelectedProject_ = -1;
+    QString selectedProjectDbPath_;
 
-    SSHInterface sshInterface_;
+    SSHInterface *sshInterface_;
+    SQLInterface projectDb_;
 };
 
 

@@ -2,6 +2,7 @@
 #define PLOTTER_H
 
 #include "qcustomplot.h"
+#include <unordered_map>
 
 enum PlotMode
 {
@@ -25,12 +26,17 @@ public:
     {}
 
 
-    void plotGraphs(const QVector<QVector<double>>& resultsets, const QVector<QString>& resultnames, PlotMode mode, QDateTime date);
+    void whichIDsAreNotCached(const QVector<int>& IDs, QVector<int>& uncachedOut);
+    void plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString>& allresultnames, const QVector<QVector<double>>& uncachedresultsets, const QVector<int>& uncachedIDs, PlotMode mode, QDateTime date);
+
+    void clearCache() { cache_.clear(); }
 private:
     QCustomPlot *plot_;
     QTextBrowser *resultsInfo_;
 
     QVector<QColor> graphColors_;
+
+    std::unordered_map<int, QVector<double>> cache_;
 };
 
 #endif // PLOTTER_H

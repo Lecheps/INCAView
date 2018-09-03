@@ -197,3 +197,11 @@ int Parameter::isNotInRange(const parameter_value& newval)
 
     return false;
 }
+
+parameter_type Parameter::parseType(QString &string)
+{
+    if(string == "DOUBLE") return parametertype_double;
+    if(string == "UINT")   return parametertype_uint;
+    if(string == "BOOL")   return parametertype_bool;
+    if(string == "PTIME")  return parametertype_ptime;
+}

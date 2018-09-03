@@ -24,7 +24,8 @@ SOURCES += main.cpp\
     parametermodel.cpp \
     sshInterface.cpp \
     parametereditdelegate.cpp \
-    plotter.cpp
+    plotter.cpp \
+    sqlinterface.cpp
 
 HEADERS  += mainwindow.h \
     treemodel.h \
@@ -35,7 +36,8 @@ HEADERS  += mainwindow.h \
     sshInterface.h \
     sqlhandler/parameterserialization.h \
     parametereditdelegate.h \
-    plotter.h
+    plotter.h \
+    sqlinterface.h
 
 FORMS    += mainwindow.ui
 
