@@ -252,6 +252,19 @@ void MainWindow::loadResultStructure(const char *remotedbpath)
     ui->treeViewResults->setModel(treeResults_);
 
     QObject::connect(ui->treeViewResults->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateGraphsAndResultSummary);
+
+    //TODO: The following should be done somewhere else?
+
+    ui->radioButtonDaily->setEnabled(true);
+    ui->radioButtonMonthlyAverages->setEnabled(true);
+    ui->radioButtonYearlyAverages->setEnabled(true);
+    ui->radioButtonErrors->setEnabled(true);
+    ui->radioButtonErrorHistogram->setEnabled(true);
+    ui->radioButtonErrorNormalProbability->setEnabled(true);
+
+    ui->treeViewResults->expandToDepth(3);
+    ui->treeViewResults->resizeColumnToContents(0);
+    ui->treeViewResults->setColumnHidden(1, true);
 }
 
 void MainWindow::toggleWeExpectToBeConnected(bool connected)
@@ -413,10 +426,10 @@ void MainWindow::runModel()
         //TODO: What do we do?
     }
 
-    const char *remoteexepath = "bla.exe"; //TODO: This should probably be stored and read from the local database
+    const char *remoteexepath = "persist"; //TODO: This should probably be stored and read from the local database
 
     //TODO: We probably should send info about what path we want for the remote result db?
-    //sshInterface_->runModel(remoteexepath, remoteParameterDbName, ui->progressBarRunInca);
+    sshInterface_->runModel(remoteexepath, remoteParameterDbName, ui->progressBarRunInca);
 }
 
 void MainWindow::onRunINCAFinished()
@@ -434,7 +447,7 @@ void MainWindow::onRunINCAFinished()
     }
 
     updateGraphsAndResultSummary(); //In case somebody had a graph selected, it is updated with a plot of the data generated from the last run.
-    ui->pushRun->setEnabled(true);
+    ui->pushRun->setEnabled(true);    
 }
 
 void MainWindow::handleRunINCAError(const QString& message)
@@ -505,6 +518,8 @@ void MainWindow::updateGraphsAndResultSummary()
                     QString name = treeResults_->getName(ID);
                     QString parentName = treeResults_->getParentName(ID);
                     resultNames.push_back(name + " (" + parentName + ")");
+
+                    qDebug() << "try to plot " << name;
                 }
             }
 
@@ -521,9 +536,15 @@ void MainWindow::updateGraphsAndResultSummary()
                 plotter_->whichIDsAreNotCached(IDs, uncachedIDs);
 
                 QVector<QVector<double>> resultsets;
-                //TODO: Formalize the paths to the remote databases in some way so that they are not just spread around in the code here.
-                const char *remoteResultDbPath = "results.db";
-                bool success = sshInterface_->getResultSets(remoteResultDbPath, uncachedIDs, resultsets);
+                bool success = true;
+                if(!uncachedIDs.empty())
+                {
+                    //TODO: Formalize the paths to the remote databases in some way so that they are not just spread around in the code here.
+                    const char *remoteResultDbPath = "results.db";
+                    success = sshInterface_->getResultSets(remoteResultDbPath, uncachedIDs, resultsets);
+                }
+
+                qDebug() << success << IDs.size() << " " << uncachedIDs.size() << " " << resultsets.size();
 
                 if(success)
                 {

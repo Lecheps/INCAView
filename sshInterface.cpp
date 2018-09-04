@@ -599,7 +599,7 @@ bool SSHInterface::runSqlHandler(const char *command, const char *db, const char
 {
     char commandbuf[512];
     char resultbuf[512];
-    int len = sprintf(commandbuf, "./incaview/sqlhandler %s incaview/%s %s", command, db, tempfile);
+    int len = sprintf(commandbuf, "./incaview/sqlhandler %s %s %s", command, db, tempfile);
     if(extraParam)
     {
         for(const QString &par : *extraParam)
@@ -973,7 +973,8 @@ void SSHRunModelWorker::runModel(const char *user, const char *address, const ch
     }
 
     char runcommand[512];
-    sprintf(runcommand, "cd incaview;./%s", exename);
+    //sprintf(runcommand, "cd incaview;./%s", exename);
+    sprintf(runcommand, "rm results.db;./%s", exename); //TODO TODO TODO TODO: We should eventually not delete results.db, this should be handled differently
     ssh_channel_request_exec(inca_run_channel, runcommand);
 
     char readData[512];

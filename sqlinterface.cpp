@@ -161,6 +161,7 @@ bool SQLInterface::writeParameterValues(QVector<parameter_serial_entry>& writeda
 
     size_t numparameters = writedata.size();
 
+    QSqlDatabase::database().transaction();
     for(int i = 0; i < numparameters; ++i)
     {
         parameter_serial_entry &entry = writedata[i];
@@ -205,6 +206,7 @@ bool SQLInterface::writeParameterValues(QVector<parameter_serial_entry>& writeda
             return false;
         }
     }
+    QSqlDatabase::database().commit();
 
     return true;
 }

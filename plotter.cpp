@@ -40,7 +40,11 @@ void Plotter::plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString
 
             int ID = allIDsToPlot[i];
 
-            const QVector<double>& yval = cache_[i];
+            const QVector<double>& yval = cache_[ID];
+
+            if(yval.empty()) continue;
+            qDebug() << yval.size();
+
             int cnt = yval.count();
             QVector<double> xval(cnt);
 
@@ -104,7 +108,7 @@ void Plotter::plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString
                         {
                             double value = sum / (double) dayscnt;
                             displayedy.push_back(value);
-                            displayedx.push_back(QDateTime(QDate(prevyear, 1, 1)).toTime_t());
+                            displayedx.push_back(QDateTime(QDate(prevyear, 1, 1)).toSecsSinceEpoch());
                             min = value < min ? value : min;
                             max = value > max ? value : max;
 
@@ -126,7 +130,7 @@ void Plotter::plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString
                     min = std::numeric_limits<double>::max();
                     max = std::numeric_limits<double>::min();
 
-                    QDateTime date = QDateTime::fromTime_t(starttime);
+                    QDateTime date = QDateTime::fromSecsSinceEpoch(starttime);
                     int prevmonth = date.date().month();
                     int prevyear = date.date().year();
                     double sum = 0;
@@ -140,7 +144,7 @@ void Plotter::plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString
                         {
                             double value = sum / (double) dayscnt;
                             displayedy.push_back(value);
-                            displayedx.push_back(QDateTime(QDate(prevyear, prevmonth, 1)).toTime_t());
+                            displayedx.push_back(QDateTime(QDate(prevyear, prevmonth, 1)).toSecsSinceEpoch());
                             min = value < min ? value : min;
                             max = value > max ? value : max;
 
@@ -189,6 +193,8 @@ void Plotter::plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString
             QString observedName = allresultnames[0];
             QString modeledName = allresultnames[1];
 
+            if(observed.empty() || modeled.empty()) return;
+
             //TODO: Should we give a warning if the count of the two sets are not equal?
             int count = std::min(observed.count(), modeled.count());
 
@@ -229,7 +235,8 @@ void Plotter::plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString
             double meanerror = sumerror / (double)count;
             double meanabsoluteerror = sumabsoluteerror / (double)count;
             double meansquarederror = sumsquarederror / (double)count;
-            double nashsutcliffe = 1.0 - sumsquarederror / observedvariance;
+
+            double nashsutcliffe = 1.0 - sumsquarederror / observedvariance; //TODO: check for observedvariance==0
 
             resultsInfo_->append(QString(
                     "Observed: %1, vs Modeled: %2<br/>"
@@ -255,6 +262,9 @@ void Plotter::plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString
             }
             //double sigma = std::sqrt(errorvariance);
 
+            //TODO: Make all the error plots nicer when the error is very small.
+            double epsilon = 1e-6; //TODO: Find a less arbitrary epsilon.
+
             if(mode == PlotMode_Error)
             {
                 QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
@@ -262,7 +272,10 @@ void Plotter::plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString
                 plot_->xAxis->setTicker(dateTicker);
 
                 QCPGraph* graph = plot_->addGraph();
-                plot_->yAxis->setRange(min, max);
+                if(max - min > epsilon)
+                    plot_->yAxis->setRange(min, max);
+                else
+                    plot_->yAxis->setRange(min - epsilon, min + epsilon);
                 plot_->xAxis->setRange(xval.first(), xval.last());
                 graph->setData(xval, errors, true);
 
@@ -303,7 +316,15 @@ void Plotter::plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString
                 graph->setLineStyle(QCPGraph::lsNone);
                 graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 4));
 
-                plot_->yAxis->setRange(sortederrors.first(), sortederrors.last());
+                if(sortederrors.last() - sortederrors.first() > epsilon)
+                {
+                    plot_->yAxis->setRange(sortederrors.first(), sortederrors.last());
+                }
+                else
+                {
+                    plot_->yAxis->setRange(sortederrors.first(), sortederrors.first() + epsilon);
+                }
+
                 plot_->xAxis->setRange(expected.first(), expected.last());
                 QSharedPointer<QCPAxisTickerFixed> ticker(new QCPAxisTickerFixed);
                 plot_->xAxis->setTicker(ticker); //NOTE: We have to reset the ticker in case it was set to a date ticker previously
@@ -313,8 +334,7 @@ void Plotter::plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString
             }
             else if(mode == PlotMode_ErrorHistogram)
             {
-                //TODO: Have fewer bins if count is very low?
-                int numbins = 20;
+                int numbins = 20; //TODO: How to determine a good number of bins?
                 QVector<double> valuebins(numbins);
                 QVector<double> values(numbins);
                 double range = (max - min) / (double) numbins;
@@ -328,7 +348,9 @@ void Plotter::plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString
                 double invcount = 1.0 / (double)count;
                 for(int i = 0; i < count; ++i)
                 {
-                    int bin = (int)floor((errors[i]-min)/range);
+                    int bin = 0;
+
+                    if(range > epsilon) bin = (int)floor((errors[i]-min)/range);
                     if(bin >= numbins) bin = numbins - 1; //NOTE: will happen with the max value;
                     if(bin < 0) bin = 0; //NOTE: SHOULD not happen.
                     valuebins[bin] += invcount;
@@ -336,7 +358,10 @@ void Plotter::plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString
                 }
 
                 plot_->yAxis->setRange(0.0, binmax);
-                plot_->xAxis->setRange(min, max);
+                if(max - min > epsilon)
+                    plot_->xAxis->setRange(min, max);
+                else
+                    plot_->xAxis->setRange(min, min + epsilon);
 
                 QSharedPointer<QCPAxisTickerFixed> ticker(new QCPAxisTickerFixed);
                 int tickcount = 10;
@@ -371,16 +396,9 @@ double NormalCDFInverse(double p)
 {
     if (p <= 0.0 || p >= 1.0)
     {
-        /*
-        std::stringstream os;
-        os << "Invalid input argument (" << p
-           << "); must be larger than 0 but less than 1.";
-        throw std::invalid_argument( os.str() );
-        */
         return 0.0;
     }
 
-    // See article above for explanation of this section.
     if (p < 0.5)
     {
         // F^-1(p) = - G^-1(p)
