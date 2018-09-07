@@ -6,7 +6,6 @@
 #include "sqlhandler/parameterserialization.h"
 #include "treemodel.h"
 #include <QThread>
-#include <QProgressBar>
 #include <QTimer>
 #include <QString>
 #include <sstream>
@@ -30,7 +29,6 @@ public:
     void runModel(const char *, const char *, const char *exename, const char *);
     virtual ~SSHRunModelWorker();
 signals:
-    void tick(int);
     void resultReady();
     void log(const QString&);
     void reportError(const QString&);
@@ -53,18 +51,20 @@ public:
 
 
     //void getProjectList(const char *remoteDB, const char *username, QVector<ProjectSpec> &outdata);
-    void getResultsStructure(const char *remoteDB, QVector<TreeData> &structuredata);
+    bool getResultsStructure(const char *remoteDB, QVector<TreeData> &structuredata);
     //void getParameterStructure(const char *remoteDB, QVector<TreeData> &structuredata);
     //void getParameterValuesMinMax(const char *remoteDB, std::map<uint32_t, parameter_min_max_val_serial_entry>& IDtoParam);
     //void writeParameterValues(const char *remoteDB, QVector<parameter_serial_entry>& writedata);
     bool getResultSets(const char *remoteDB, const QVector<int>& IDs, QVector<QVector<double>> &valuedata);
     bool uploadEntireFile(const char *localpath, const char *remotelocation, const char *remotefilename);
+    bool downloadEntireFile(const char *localpath, const char *remotefilename);
+
+    bool createParameterDatabase(const char *remoteparameterfile, const char *exename);
 
     const char * getDisconnectionMessage();
 
-    void runModel(const char *exename, const char *remoteDB, QProgressBar *progressBar);
+    void runModel(const char *exename, const char *remoteDB);
     void handleIncaFinished();
-    void handleIncaTick(int);
     void handleRunINCAError(const QString&);
 
     void sendNoop();
@@ -76,7 +76,7 @@ public:
 private:
     ssh_session session_;
 
-    //NOTE: These two bools only reflect whether or not we have logged in and not logged out. We could have been disconnected by other means, so one should always test for isSessionConnected().
+    //NOTE: These two bools only reflect whether or not we have logged in and not logged out. We could have been disconnected by error, so one should always test for isSessionConnected().
     bool loggedInToHub_ = false;
     bool loggedInToInstance_ = false;
     bool instanceExists_ = false;
@@ -90,19 +90,17 @@ private:
 
 
     QThread incaWorkerThread_;
-    QProgressBar *INCARunProgressBar_;
     QTimer *sendNoopTimer;
 
     bool connectSession(const char *username, const char *serveraddress, const char *keyfile);
     void disconnectSession();
     bool isSessionConnected();
 
-    bool runCommand(const char *command, char *resultbuffer, int bufferlen);
     bool runCommand(const char *command, std::stringstream &out);
     bool writeFile(const void *contents, size_t contentssize, const char *remotelocation, const char *remotefilename);
     bool readFile(void **buffer, size_t *buffersize, const char *remotefilename);
     bool runSqlHandler(const char *command, const char *db, const char *tempfile, const QVector<QString> *extraParam = 0);
-    void getStructureData(const char *remoteDB, const char *command, QVector<TreeData> &outdata);
+    bool getStructureData(const char *remoteDB, const char *command, QVector<TreeData> &outdata);
 
     void generateRandomTransactionFileName(char *outfilename, const char *dbname);
     void deleteTransactionFile(char *filename);

@@ -20,8 +20,6 @@ QWidget *ParameterEditDelegate::createEditor(QWidget *parent, const QStyleOption
         dateEdit->setDisplayFormat("d. MMMM yyyy");
 
         dateEdit->setMinimumDate(Parameter::valueAsQDate(par->min));
-        QDate maxdate = Parameter::valueAsQDate(par->max);
-        //qDebug()<<maxdate.toString("d. MMMM yyyy");
         dateEdit->setMaximumDate(Parameter::valueAsQDate(par->max));
         return dateEdit;
     }

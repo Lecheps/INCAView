@@ -26,10 +26,12 @@ public:
     {}
 
 
-    void whichIDsAreNotCached(const QVector<int>& IDs, QVector<int>& uncachedOut);
-    void plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString>& allresultnames, const QVector<QVector<double>>& uncachedresultsets, const QVector<int>& uncachedIDs, PlotMode mode, QDateTime date);
+    void filterUncachedIDs(const QVector<int>& IDs, QVector<int>& uncachedOut);
+    void plotGraphs(const QVector<int>& IDs, const QVector<QString>& resultnames, PlotMode mode, QDateTime date);
 
+    void addToCache(const QVector<int>& newIDs, const QVector<QVector<double>>& newResultsets);
     void clearCache() { cache_.clear(); }
+    void clearPlots();
 private:
     QCustomPlot *plot_;
     QTextBrowser *resultsInfo_;

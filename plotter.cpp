@@ -5,7 +5,7 @@ double NormalCDFInverse(double p);
 double NormalCDF(double x);
 
 
-void Plotter::whichIDsAreNotCached(const QVector<int>& IDs, QVector<int>& uncachedOut)
+void Plotter::filterUncachedIDs(const QVector<int>& IDs, QVector<int>& uncachedOut)
 {
     for(int ID : IDs)
     {
@@ -14,19 +14,30 @@ void Plotter::whichIDsAreNotCached(const QVector<int>& IDs, QVector<int>& uncach
     }
 }
 
-void Plotter::plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString>& allresultnames, const QVector<QVector<double>>& uncachedresultsets, const QVector<int>& uncachedIDs, PlotMode mode, QDateTime date)
+void Plotter::addToCache(const QVector<int>& newIDs, const QVector<QVector<double>>& newResultsets)
+{
+    for(int i = 0; i < newResultsets.count(); ++i)
+    {
+        int ID = newIDs[i];
+        cache_[ID] = newResultsets[i]; //NOTE: Vector copy
+    }
+}
+
+void Plotter::clearPlots()
+{
+    plot_->clearPlottables();
+    resultsInfo_->clear();
+    plot_->replot();
+}
+
+void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& resultnames, PlotMode mode, QDateTime date)
 {
     //NOTE: Right now we just throw out all previous graphs and re-create everything. We could keep track of which ID corresponds to which graph (in which plot mode)
     // and then only update/create the graphs that have changed. However, this should only be necessary if this routine runs very slowly on some user machines.
     plot_->clearPlottables();
     resultsInfo_->clear();
-    int64_t starttime = date.toSecsSinceEpoch();
 
-    for(int i = 0; i < uncachedresultsets.count(); ++i)
-    {
-        int ID = uncachedIDs[i];
-        cache_[ID] = uncachedresultsets[i];
-    }
+    int64_t starttime = date.toSecsSinceEpoch();
 
     if(mode == PlotMode_Daily || mode == PlotMode_MonthlyAverages || mode == PlotMode_YearlyAverages)
     {
@@ -35,15 +46,14 @@ void Plotter::plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString
 
         int firstunassignedcolor = 0;
 
-        for(int i = 0; i < allIDsToPlot.count(); ++i)
+        for(int i = 0; i < IDs.count(); ++i)
         {
 
-            int ID = allIDsToPlot[i];
+            int ID = IDs[i];
 
             const QVector<double>& yval = cache_[ID];
 
-            if(yval.empty()) continue;
-            qDebug() << yval.size();
+            if(yval.empty()) continue; //TODO: Log warning?
 
             int cnt = yval.count();
             QVector<double> xval(cnt);
@@ -80,7 +90,7 @@ void Plotter::plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString
                         "average: %5<br/>"
                         "standard deviation: %6<br/>"
                         "<br/>"
-                      ).arg(allresultnames[i], color.name())
+                      ).arg(resultnames[i], color.name())
                        .arg(min, 0, 'g', 5)
                        .arg(max, 0, 'g', 5)
                        .arg(mean, 0, 'g', 5)
@@ -183,15 +193,15 @@ void Plotter::plotGraphs(const QVector<int>& allIDsToPlot, const QVector<QString
     }
     else //mode == PlotMode_Error || mode == PlotMode_ErrorNormalProbability || mode == PlotMode_ErrorHistogram
     {
-        if(allIDsToPlot.count() == 2)
+        if(IDs.count() == 2)
         {
-            int ID0 = allIDsToPlot[0];
-            int ID1 = allIDsToPlot[1];
+            int ID0 = IDs[0];
+            int ID1 = IDs[1];
 
             const QVector<double>& observed = cache_[ID0];
             const QVector<double>& modeled = cache_[ID1];
-            QString observedName = allresultnames[0];
-            QString modeledName = allresultnames[1];
+            QString observedName = resultnames[0];
+            QString modeledName = resultnames[1];
 
             if(observed.empty() || modeled.empty()) return;
 

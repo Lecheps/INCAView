@@ -36,6 +36,7 @@ private slots:
     void on_pushRun_clicked();
     void on_pushLoadProject_clicked();
     void on_pushSaveParameters_clicked();
+    void on_pushCreateDatabase_clicked();
     void closeEvent (QCloseEvent *);
 
     void updateParameterView(const QItemSelection &, const QItemSelection &);
@@ -59,7 +60,10 @@ private slots:
 private:
     void toggleParametersHaveBeenEditedSinceLastSave(bool);
     void runModel();
-    void toggleWeExpectToBeConnected(bool);
+    void setWeExpectToBeConnected(bool);
+
+    void loadParameterDatabase(QString fileName);
+
     void loadParameterData();
     void loadResultStructure(const char *remotedbpath);
 

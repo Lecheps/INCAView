@@ -34,47 +34,6 @@ typedef double f64;
 
 #include "parameterserialization.h"
 
-static int export_project_list_callback(void *data, int argc, char **argv, char **colname)
-{
-	FILE *file = (FILE *)data;
-	assert(argc == 3);
-	
-	project_serial_entry outdata;
-	outdata.namelen = (u32)strlen(argv[0]);
-	outdata.dbnamelen = (u32)strlen(argv[1]);
-	outdata.exenamelen = (u32)strlen(argv[2]);
-	fwrite(&outdata, sizeof(outdata), 1, file);
-	fwrite(argv[0], outdata.namelen, 1, file);
-	fwrite(argv[1], outdata.dbnamelen, 1, file);
-	fwrite(argv[2], outdata.exenamelen, 1, file);
-	
-	return 0;
-}
-
-bool export_project_list(sqlite3 *db, char *username, FILE *file)
-{
-	char sqlcommand[512];
-	sprintf(sqlcommand, 
-		"SELECT Projects.Name, Projects.ValueDatabase, Models.Exename "
-		"FROM Users, Projects, Models "
-		"WHERE Users.Name = '%s' AND Projects.UserID = Users.ID AND Models.ID = Projects.ModelID",
-		username
-	);
-	
-	char *errmsg = 0;
-	int rc = sqlite3_exec(db, sqlcommand, export_project_list_callback, (void *)file, &errmsg);
-	
-	if( rc != SQLITE_OK )
-	{
-		fprintf(stdout, "ERROR: SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		fclose(file);
-		return false;
-	}
-	
-	return true;
-}
-
 void print_parameter_value(char *buffer, parameter_serial_entry *entry)
 {
 	parameter_type type = (parameter_type)entry->type;
@@ -383,7 +342,7 @@ static int export_result_values_count_callback(void *data, int argc, char **argv
 	return 0;
 }
 
-bool export_result_values(sqlite3 *db, u32 numrequests, u32* requested_ids, FILE *file)
+static bool export_result_values(sqlite3 *db, u32 numrequests, u32* requested_ids, FILE *file)
 {
 	u64 numrequests64 = (u64)numrequests;
 	fwrite(&numrequests64, sizeof(u64), 1, file);
@@ -464,15 +423,8 @@ int main(int argc, char *argv[])
 		}
 
 		bool success = false;
-		if(strcmp(argv[1], EXPORT_PROJECT_LIST_COMMAND) == 0)
-		{
-			if(argc == 5)
-			{
-				char *username = argv[4];
-				success = export_project_list(db, username, file);
-			}
-		}
-		else if(strcmp(argv[1], EXPORT_RESULT_VALUES_COMMAND) == 0)
+		
+		if(strcmp(argv[1], EXPORT_RESULT_VALUES_COMMAND) == 0)
 		{
 			u32 numrequests = argc - 4;
 			if(numrequests > 0)

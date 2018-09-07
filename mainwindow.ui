@@ -122,7 +122,7 @@
                <item>
                 <widget class="QRadioButton" name="radioButtonErrors">
                  <property name="text">
-                  <string>Residuals vs time</string>
+                  <string>Residual trend</string>
                  </property>
                 </widget>
                </item>
@@ -221,6 +221,23 @@ Values:</string>
          </widget>
         </item>
         <item>
+         <widget class="QPushButton" name="pushCreateDatabase">
+          <property name="text">
+           <string>Create database</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="pushRun">
+          <property name="toolTip">
+           <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Run INCA.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+          </property>
+          <property name="text">
+           <string>Run model</string>
+          </property>
+         </widget>
+        </item>
+        <item>
          <spacer name="horizontalSpacer">
           <property name="orientation">
            <enum>Qt::Horizontal</enum>
@@ -261,23 +278,6 @@ Values:</string>
          <widget class="QPushButton" name="pushDisconnect">
           <property name="text">
            <string>Destroy instance</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="pushRun">
-          <property name="toolTip">
-           <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Run INCA.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-          </property>
-          <property name="text">
-           <string>Run model</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QProgressBar" name="progressBarRunInca">
-          <property name="value">
-           <number>0</number>
           </property>
          </widget>
         </item>

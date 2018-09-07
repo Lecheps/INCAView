@@ -2,6 +2,7 @@
 #include <QDebug>
 #include <QTime>
 #include <QRandomGenerator>
+#include <fstream>
 
 //NOTE: Useful blog post on using QThread: https://mayaposch.wordpress.com/2011/11/01/how-to-really-truly-use-qthreads-the-full-explanation/
 
@@ -82,76 +83,142 @@ bool SSHInterface::createInstance(const char *username, const char *instancename
 
     loggedInToHub_ = true;
 
+    //NOTE: An instance will most of the time not already exist. The main example where it may exist is
+    // if we crashed out of INCAView in a previous session so that it did not get to close down the
+    // instance properly.
 
-    //TODO: Query the hub to see if an instance by the name instancename already exists.
+    //TODO: We should probably have a script running on the hub that closes down instances that have
+    // been idle for more than e.g 8 hours.
 
-    char command[512];
-    sprintf(command, "./createinstance.sh %s %s", instancename, username);
+    bool instancealreadyexists = false;
 
-    std::stringstream output;
-    runCommand(command, output);
-    //std::string gotoutput = output.str();
-    //qDebug() << gotoutput.data();
-
-    //NOTE: Format of what we want to parse for the external ip. (NOTE HOWEVER: google state that they don't guarantee the format of output from gcloud to stay constant!!!)
-    // NAME             ZONE            MACHINE_TYPE   PREEMPTIBLE  INTERNAL_IP  EXTERNAL_IP    STATUS
-    // incaview-magnus  europe-west3-a  n1-standard-2               10.156.0.4   35.234.84.222  RUNNING
-
-    //NOTE: split on whitespace:
-    std::vector<std::string> words((std::istream_iterator<std::string>(output)),
-                                     std::istream_iterator<std::string>());
-
-    //NOTE: find the second word that looks like an ip address.
-    std::regex ippattern("[[:digit:]]+.[[:digit:]]+.[[:digit:]]+.[[:digit:]]+");
-    bool foundone = false;
-    bool foundtwo = false;
-    for(std::string& word : words)
     {
-        if(std::regex_match(word, ippattern))
+        emit log(QString("Checking to see if instance ") + instancename + " already exists.");
+
+        std::stringstream output;
+        bool success = runCommand("gcloud compute instances list", output); //TODO: Check success and handle errors
+
+        //NOTE: Format of what we have to parse to see if the instancename already exists:
+        // (NOTE HOWEVER: google state that they don't guarantee the format of output from gcloud to stay constant!!!)
+        // If we want to remove the uncertainty of this format maybe changing we have to make our own
+        // python script that runs on the hub and calls into the google compute api so that we don't
+        // rely on gcloud at all.
+
+        // NAME   ZONE    MACHINE_TYPE    PREEMPTIBLE    INTERNAL_IP  EXTERNAL_IP  STATUS
+        // instancename   europe-west2-a    n1-standard2  xx.xx.xx.xx  xx.xx.xx.xx  TERMINATED
+        // ...
+
+        //NOTE: split on whitespace:
+        std::vector<std::string> words((std::istream_iterator<std::string>(output)),
+                                         std::istream_iterator<std::string>());
+        bool instanceisrunning = false;
+        int foundipcount = 0;
+        std::regex ippattern("[[:digit:]]+.[[:digit:]]+.[[:digit:]]+.[[:digit:]]+");
+        for(std::string& word : words)
         {
-            if(foundone)
+            if(word == instancename)
             {
-                instanceIp_ = word;
-                foundtwo = true;
-                break;
+                instancealreadyexists = true;
             }
-            foundone = true;
+            if(instancealreadyexists)
+            {
+                if(std::regex_match(word, ippattern))
+                {
+                    if(foundipcount == 0) foundipcount = 1;
+                    instanceIp_ = word;
+                }
+            }
+            if(foundipcount == 1)
+            {
+                if(word == "RUNNING")
+                {
+                    instanceisrunning = true;
+                    break;
+                }
+                else if(word == "TERMINATED") break;
+            }
+            if(foundipcount > 1) break;
+        }
+
+        if(instancealreadyexists && !instanceisrunning)
+        {
+            //TODO: Restart it I guess, but this is very unlikely to happen?
+            qDebug() << "Found existing compute instance " << instancename << " and it was not running ";
         }
     }
 
-    if(!foundtwo)
+    //NOTE: There is a case to make for it being better to kill an existing instance and recreate it
+    // than it is to just reuse it. We have to think about this
+
+    if(instancealreadyexists)
     {
-        emit logError("Something went wrong with creating an instance. Could not parse an external ip from output of gcloud command. Output was:");
-        emit logError(output.str().data());
-        return false;
+        emit log("Instance found to already exist.");
+    }
+    else
+    {
+        emit log("Instance does not exist, attempting to create it. This may take a few seconds ...");
+
+        char command[512];
+        sprintf(command, "./createinstance.sh %s %s", instancename, username);
+
+        std::stringstream output;
+        bool success = runCommand(command, output); //TODO: Check success and handle errors
+
+        //NOTE: Format of what we want to parse to get the external ip of the newly created instance.
+        // (NOTE HOWEVER: google state that they don't guarantee the format of output from gcloud to stay constant!!!)
+        // If we want to remove the uncertainty of this format maybe changing we have to make our own
+        // python script that runs on the hub and calls into the google compute api so that we don't
+        // rely on gcloud at all. (the createinstance.sh script currently calls gcloud)
+
+        // NAME             ZONE            MACHINE_TYPE   PREEMPTIBLE  INTERNAL_IP  EXTERNAL_IP    STATUS
+        // incaview-magnus  europe-west3-a  n1-standard-2               xx.xx.xx.xx  xx.xx.xx.xx  RUNNING
+
+        //NOTE: split on whitespace:
+        std::vector<std::string> words((std::istream_iterator<std::string>(output)),
+                                         std::istream_iterator<std::string>());
+
+        //NOTE: find the second word that looks like an ip address.
+        std::regex ippattern("[[:digit:]]+.[[:digit:]]+.[[:digit:]]+.[[:digit:]]+");
+        bool foundone = false;
+        bool foundtwo = false;
+        for(std::string& word : words)
+        {
+            if(std::regex_match(word, ippattern))
+            {
+                if(foundone)
+                {
+                    instanceIp_ = word;
+                    foundtwo = true;
+                    break;
+                }
+                foundone = true;
+            }
+        }
+
+        if(!foundtwo)
+        {
+            emit logError("Something went wrong with creating an instance. Could not parse an external ip from output of gcloud command. Output was:");
+            emit logError(output.str().data());
+            return false;
+        }
+
+        emit log(QString("Created compute instance with ip ") + instanceIp_.data());
     }
 
     instanceName_ = instancename;
     instanceUser_ = username;
 
-    emit log(QString("Created compute instance with ip ") + instanceIp_.data());
-
-    //TODO: Error handling!!
 
     //NOTE: download ssh keys for the instance.
     std::string privkeyfilename = std::string("keys/") + username;
     std::string pubkeyfilename = std::string("keys/") + username + ".pub";
 
-    void *filebuf;
-    size_t filebufsize;
+    //TODO: If we use the libssh library in a more smart way, we may probably skip saving the keys to files here and instead provide the key data directly to libssh on the connect.
 
-    //TODO: If we use the libssh library correctly, we may probably skip saving the keys to files here and instead provide the key data directly to libssh on the connect.
-    readFile(&filebuf, &filebufsize, privkeyfilename.data());
-    FILE *file = fopen("instancekey", "w");
-    fwrite(filebuf, filebufsize, 1, file);
-    fclose(file);
-    free(filebuf);
-
-    readFile(&filebuf, &filebufsize, pubkeyfilename.data());
-    file = fopen("instancekey.pub", "w");
-    fwrite(filebuf, filebufsize, 1, file);
-    fclose(file);
-    free(filebuf);
+    success = downloadEntireFile("instancekey", privkeyfilename.data());
+    //TODO: Check for success of download, and abort otherwise
+    success = downloadEntireFile("instancekey.pub", pubkeyfilename.data());
+    //TODO: Check for success of download, and abort otherwise
 
     emit log("SSH keys to instance downloaded. Attempting to connect to instance...");
 
@@ -205,20 +272,19 @@ bool SSHInterface::destroyInstance()
         bool success = connectSession(hubUsername_.data(), hubIp_.data(), hubKey_.data());
         if(!success)
         {
-            emit logError("SSH: Unable to connect to hub in order to destroy compute instance.");
+            emit logError("SSH: Unable to connect to the hub in order to destroy the compute instance.");
             return false;
         }
         loggedInToHub_ = true;
     }
 
-    emit log(QString("SSH: Sending command to destroy compute instance ") + instanceName_.data());
-    emit log(QString("This may take a few seconds ..."));
+    emit log(QString("SSH: Sending command to destroy compute instance ") + instanceName_.data() + " This may take a few seconds ...");
 
     char command[512];
     sprintf(command, "./destroyinstance.sh %s", instanceName_.data());
 
-    std::stringstream out;
-    bool success = runCommand(command, out);
+    std::stringstream output;
+    bool success = runCommand(command, output);
 
     if(success)
     {
@@ -271,8 +337,6 @@ bool SSHInterface::connectSession(const char *user, const char *address, const c
         }
 
         //NOTE: This registers the server as a known host on the local user computer. It should be ok to do this without any further checks since we only connect INCAView to servers we own?
-        // ALTHOUGH: somebody may mistype the server address. The problem with querying them for this though is that they would maybe not recognize the mistyping?
-        // Alternatively, eventually set up a server that provides the right address so that the user does not have to type it in.
         ssh_write_knownhost(session_);
 
         rc = ssh_userauth_privatekey_file(session_, 0, keyfile, 0);
@@ -320,7 +384,7 @@ bool SSHInterface::runCommand(const char *command, std::stringstream &out)
 {
     //NOTE: The return value of this function only indicates whether or not the command was executed.
     //  It does not say whether or not the program that was called ran successfully. For that one has
-    //  to parse the result buffer.
+    //  to parse the out strngstream.
     bool success = false;
     if(isSessionConnected())
     {
@@ -367,43 +431,6 @@ bool SSHInterface::runCommand(const char *command, std::stringstream &out)
     return success;
 }
 
-bool SSHInterface::runCommand(const char *command, char *resultbuffer, int bufferlen)
-{
-    //NOTE: The return value of this function only indicates whether or not the command was executed.
-    //  It does not say whether or not the program that was called ran successfully. For that one has
-    //  to parse the result buffer.
-    bool success = false;
-    if(isSessionConnected())
-    {
-        ssh_channel channel = ssh_channel_new(session_);
-        int rc = ssh_channel_open_session(channel);
-        if(rc != SSH_OK)
-        {
-            emit logError(QString("SSH: Failed to open channel: %1").arg(ssh_get_error(session_)));
-        }
-        else
-        {
-            ssh_channel_request_exec(channel, command);
-
-            if(resultbuffer)
-            {
-                int nbytes = ssh_channel_read(channel, resultbuffer, bufferlen-1, 0);
-                resultbuffer[nbytes] = 0;
-            }
-
-            success = true;
-
-            ssh_channel_close(channel);
-        }
-        ssh_channel_free(channel);
-    }
-    else
-    {
-        emit logError(QString("SSH: Tried to run command \"%1\" without having an open ssh session.").arg(command));
-    }
-
-    return success;
-}
 
 bool SSHInterface::writeFile(const void *contents, size_t contentssize, const char *remotelocation, const char *remotefilename)
 {
@@ -457,53 +484,44 @@ bool SSHInterface::writeFile(const void *contents, size_t contentssize, const ch
 
 bool SSHInterface::uploadEntireFile(const char *localpath, const char *remotelocation, const char *remotefilename)
 {
-    uint8_t *filedata = 0;
-    FILE *file = fopen(localpath, "r");
-    if (!file)
+    std::ifstream file(localpath, std::ios::binary | std::ios::ate);
+    size_t size = (size_t)file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    qDebug() << "size of file was " << size;
+
+    std::vector<char> buffer;
+    buffer.resize(size);
+    if (file.read(buffer.data(), size))
     {
-        emit logError(QString("Failed to open the file ") + localpath);
+
+    }
+    else
+    {
+        emit logError(QString("Error while reading the file ") + localpath);
         return false;
     }
 
-    if (fseek(file, 0L, SEEK_END) != 0)
-    {
-        emit logError(QString("Error while reading the file 1 ") + localpath);
-        fclose(file);
-        return false;
-    }
+    bool success = writeFile(buffer.data(), buffer.size(), remotelocation, remotefilename);
 
-    long bufsize = ftell(file);
-    if (bufsize == -1)
-    {
-        emit logError(QString("Error while reading the file 2 ") + localpath);
-        fclose(file);
-        return false;
-    }
+    return success;
+}
 
-    filedata = (uint8_t *)malloc((size_t)bufsize);
+bool SSHInterface::downloadEntireFile(const char *localpath, const char *remotefilename)
+{
+    void *filebuf = nullptr;
+    size_t filebufsize;
 
-    if (fseek(file, 0L, SEEK_SET) != 0)
-    {
-        emit logError(QString("Error while reading the file 3 ") + localpath);
-        free(filedata);
-        fclose(file);
-        return false;
-    }
+    bool success = readFile(&filebuf, &filebufsize, remotefilename);
+    if(!success) return false;
 
-    size_t newLen = fread(filedata, 1, (size_t)bufsize, file);
-    if (newLen == 0)
-    {
-        emit logError(QString("Error while reading the file 4 ") + localpath);
-        free(filedata);
-        fclose(file);
-        return false;
-    }
 
-    fclose(file);
+    std::ofstream outfile (localpath, std::ofstream::binary);
+    outfile.write((char *)filebuf, filebufsize);
+    outfile.close();
 
-    bool success = writeFile(filedata, (size_t)bufsize, remotelocation, remotefilename);
 
-    free(filedata);
+    if(filebuf) free(filebuf);
 
     return success;
 }
@@ -598,7 +616,6 @@ bool startsWith(const char *pre, const char *str)
 bool SSHInterface::runSqlHandler(const char *command, const char *db, const char *tempfile, const QVector<QString> *extraParam)
 {
     char commandbuf[512];
-    char resultbuf[512];
     int len = sprintf(commandbuf, "./incaview/sqlhandler %s %s %s", command, db, tempfile);
     if(extraParam)
     {
@@ -610,25 +627,28 @@ bool SSHInterface::runSqlHandler(const char *command, const char *db, const char
 
     //qDebug(commandbuf);
 
-    bool success = runCommand(commandbuf, resultbuf, sizeof(resultbuf));
+    std::stringstream output;
+    bool success = runCommand(commandbuf, output);
 
     //qDebug(resultbuf);
 
-    if(startsWith("ERROR:", resultbuf))
+    if(startsWith("ERROR:", output.str().data()))
     {
-        emit logError(QString("SSH: SQL: Unsuccessful operation on remote database:</br>&emsp;%1").arg(resultbuf));
+        emit logError(QString("SSH: SQL: Unsuccessful operation on remote database:</br>&emsp;") + output.str().data());
         success = false;
     }
-    else if(startsWith("SUCCESS:", resultbuf))
-    {
+    //else if(startsWith("SUCCESS:", output.str().data()))
+    //{
         //emit log(QString("SSH: SQL: Successful request to remote database: %1").arg(command));
-    }
+    //}
 
     return success;
 }
 
 void SSHInterface::generateRandomTransactionFileName(char *outfilename, const char *dbname)
 {
+    //HMM: this is not really needed anymore since we only have one user at a time at each compute instance.
+
     quint32 number = QRandomGenerator::global()->generate();
 
     sprintf(outfilename, "tmp%u%s.dat", number, dbname);
@@ -640,7 +660,9 @@ void SSHInterface::deleteTransactionFile(char *filename)
 {
     char command[512];
     sprintf(command, "rm %s", filename);
-    runCommand(command, 0, 0);
+    std::stringstream output;
+    runCommand(command, output);
+    //NOTE: It should not be necessary to parse the output of this?
 }
 
 /*
@@ -685,7 +707,7 @@ void SSHInterface::getProjectList(const char *remoteDB, const char *username, QV
 */
 
 
-void SSHInterface::getStructureData(const char *remoteDB, const char *command, QVector<TreeData> &outdata)
+bool SSHInterface::getStructureData(const char *remoteDB, const char *command, QVector<TreeData> &outdata)
 {
     char tmpname[256];
     generateRandomTransactionFileName(tmpname, remoteDB);
@@ -719,11 +741,13 @@ void SSHInterface::getStructureData(const char *remoteDB, const char *command, Q
     }
 
     deleteTransactionFile(tmpname);
+
+    return success;
 }
 
-void SSHInterface::getResultsStructure(const char *remoteDB, QVector<TreeData> &structuredata)
+bool SSHInterface::getResultsStructure(const char *remoteDB, QVector<TreeData> &structuredata)
 {
-    getStructureData(remoteDB, EXPORT_RESULTS_STRUCTURE_COMMAND, structuredata);
+    return getStructureData(remoteDB, EXPORT_RESULTS_STRUCTURE_COMMAND, structuredata);
 }
 
 /*
@@ -852,7 +876,34 @@ void SSHInterface::writeParameterValues(const char *remoteDB, QVector<parameter_
 }
 */
 
-void SSHInterface::runModel(const char *exename, const char *remoteDB, QProgressBar *progressBar)
+
+bool SSHInterface::createParameterDatabase(const char *remoteparameterfile, const char *remoteexename)
+{
+    if(!isInstanceConnected())
+    {
+        //NOTE: should never happen if interface behaves correctly
+        //TODO: log error
+        return false;
+    }
+    char command[512];
+
+    //NOTE: We delete the existing parameter database. This is only necessary because the exe does not delete it when trying to overwrite (i think).
+    // will probably be fixed later.
+    sprintf(command, "rm parameters.db;./%s create_parameter_database %s", remoteexename, remoteparameterfile);
+
+    qDebug() << command;
+
+    std::stringstream output;
+    bool success = runCommand(command, output);
+
+    qDebug() << output.str().data();
+
+    //TODO: Parse output to see if we actually succeeded?
+
+    return success;
+}
+
+void SSHInterface::runModel(const char *exename, const char *remoteDB)
 {
     if(!isInstanceConnected())
     {
@@ -872,14 +923,10 @@ void SSHInterface::runModel(const char *exename, const char *remoteDB, QProgress
     connect(worker, &SSHRunModelWorker::resultReady, &incaWorkerThread_, &QThread::quit);
     connect(&incaWorkerThread_, &QThread::finished, worker, &QObject::deleteLater);
     connect(worker, &SSHRunModelWorker::resultReady, this, &SSHInterface::handleIncaFinished);
-    connect(worker, &SSHRunModelWorker::tick, this, &SSHInterface::handleIncaTick);
 
     //Relay logging signals
     connect(worker, &SSHRunModelWorker::log, this, &SSHInterface::log);
     connect(worker, &SSHRunModelWorker::reportError, this, &SSHInterface::handleRunINCAError);
-
-    INCARunProgressBar_ = progressBar;
-    INCARunProgressBar_->setVisible(true);
 
     incaWorkerThread_.start();
 
@@ -890,10 +937,7 @@ void SSHInterface::runModel(const char *exename, const char *remoteDB, QProgress
 
 void SSHInterface::handleIncaFinished()
 {
-    if(INCARunProgressBar_)
-    {
-        INCARunProgressBar_->setVisible(false);
-    }
+    //Hmm, we don't seem to have to do anything else here, we could maybe just relay the signal directly
 
     emit runINCAFinished();
 }
@@ -902,11 +946,6 @@ void SSHInterface::handleRunINCAError(const QString& message)
 {
     //NOTE: Just relay the signal upwards...
     emit runINCAError(message);
-}
-
-void SSHInterface::handleIncaTick(int ticknum)
-{
-    INCARunProgressBar_->setValue(ticknum);
 }
 
 void SSHInterface::sendNoop()
@@ -997,8 +1036,7 @@ void SSHRunModelWorker::runModel(const char *user, const char *address, const ch
         if(rc > 0)
         {
             emit log(readData);
-            //TODO: When we have an inca model that prints out its timesteps, parse this output and
-            //emit tick(timestep); to update the progress bar.
+            //TODO: Should we parse the output of the model exe in some way?
 
             //NOTE: If the provided exe name is false or something else is wrong with the command we provided, that seems to be printed to
             // stderr, and so we don't catch it. Of course, we should never provide an exe name that is wrong, but it would be nice to log

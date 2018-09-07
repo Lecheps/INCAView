@@ -51,11 +51,17 @@ QVariant ParameterModel::data(const QModelIndex &index, int role) const
             } break;
             case 2:
             {
-                return Parameter::getValueDisplayString(param->min, param->type, precision);
+                if(param->type != parametertype_bool)
+                    return Parameter::getValueDisplayString(param->min, param->type, precision);
+                else
+                    return ""; //NOTE: Don't display min/max values for bool parameters
             } break;
             case 3:
             {
-                return Parameter::getValueDisplayString(param->max, param->type, precision);
+                if(param->type != parametertype_bool)
+                    return Parameter::getValueDisplayString(param->max, param->type, precision);
+                else
+                    return ""; //NOTE: Don't display min/max values for bool parameters
             } break;
         }
     } break;
@@ -75,8 +81,8 @@ QVariant ParameterModel::data(const QModelIndex &index, int role) const
     {
         int ID = visibleParamID_[index.row()];
         Parameter* param = IDtoParam_.at(ID);
-        if( (param->isNotInRange(param->value)==-1 && index.column()==2) ||
-            (param->isNotInRange(param->value)==1 && index.column()==3) )
+        if( (param->isNotInRange(param->value)== -1 && index.column()==2) ||
+            (param->isNotInRange(param->value)== 1 && index.column()==3) )
         {
             QBrush colorbrush;
             colorbrush.setColor(Qt::red);
@@ -222,17 +228,6 @@ void ParameterModel::addParameter(const QString& name, int ID, int parentID, con
 {
     Parameter *param = new Parameter(name, ID, parentID, entry);
     IDtoParam_[ID] = param;
-    //TODO: Do we really want to rely on case sensitive names here? Alternative?
-    if(!timestepsLoaded_ && name == "Timesteps")
-    {
-        timestepsLoaded_ = true;
-        timesteps_ = entry.value.val_uint;
-    }
-    if(!startDateLoaded_ && name == "Start date" )
-    {
-        startDateLoaded_ = true;
-        startDate_ = entry.value.val_ptime;
-    }
 }
 
 void ParameterModel::clearVisibleParameters()

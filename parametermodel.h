@@ -38,17 +38,6 @@ public:
 
     const Parameter *getParameterAtRow(int row) const; //NOTE: this is only to be used by the edit delegates
 
-
-    //NOTE: these are public since I really didn't want to write accessors for them, but they should only be set by this class.
-    //NOTE: We store a copy of these values separately mainly because: We sometimes need to look up values of these that correspond to the latest run,
-    //   not necessarily the latest edit of the parameter. Also, faster lookup (probably insignificant).
-    //NOTE: this is set if we load a parameter called "Timesteps".
-    uint64_t timesteps_;
-    bool timestepsLoaded_ = false;
-    //NOTE: this is set if we load a parameter called "Start date".
-    int64_t startDate_;
-    bool startDateLoaded_ = false;
-
 private:
     std::vector<int> visibleParamID_;
     std::map<int, Parameter*> IDtoParam_;

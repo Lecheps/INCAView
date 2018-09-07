@@ -10,18 +10,23 @@ SQLInterface::SQLInterface()
 
 bool SQLInterface::setDatabase(QString& path)
 {
+    if(dbIsSet_)
+    {
+        db_.close();
+    }
+
     db_ = QSqlDatabase::addDatabase("QSQLITE");
     db_.setDatabaseName(path);
 
-   if (!db_.open())
-   {
+    if (!db_.open())
+    {
         return false;
-   }
-   else
-   {
+    }
+    else
+    {
        dbIsSet_ = true;
        return true;
-   }
+    }
 }
 
 bool SQLInterface::getParameterStructure(QVector<TreeData> &structuredata)

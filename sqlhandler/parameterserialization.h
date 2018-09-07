@@ -49,17 +49,8 @@ struct structure_serial_entry
     uint32_t childNameLen;
 };
 
-struct project_serial_entry
-{
-	uint32_t namelen;
-	uint32_t dbnamelen;
-	uint32_t exenamelen;
-};
-
 #pragma pack(pop)
 
-
-#define EXPORT_PROJECT_LIST_COMMAND "export_project_list"
 #define EXPORT_RESULTS_STRUCTURE_COMMAND "export_results_structure"
 #define EXPORT_PARAMETER_STRUCTURE_COMMAND "export_parameter_structure"
 #define EXPORT_RESULT_VALUES_COMMAND "export_result_values"
