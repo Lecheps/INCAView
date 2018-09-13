@@ -415,6 +415,8 @@ bool SSHInterface::runCommand(const char *command, std::stringstream &out)
                 {
                    out << readData;
                 }
+
+                QThread::msleep(50); //TODO: We should check that this actually does what we want.
             }
 
             success = true;
@@ -485,6 +487,13 @@ bool SSHInterface::writeFile(const void *contents, size_t contentssize, const ch
 bool SSHInterface::uploadEntireFile(const char *localpath, const char *remotelocation, const char *remotefilename)
 {
     std::ifstream file(localpath, std::ios::binary | std::ios::ate);
+
+    if(file.fail())
+    {
+        emit logError(QString("Could not open file ") + localpath);
+        return false;
+    }
+
     size_t size = (size_t)file.tellg();
     file.seekg(0, std::ios::beg);
 
@@ -492,13 +501,12 @@ bool SSHInterface::uploadEntireFile(const char *localpath, const char *remoteloc
 
     std::vector<char> buffer;
     buffer.resize(size);
-    if (file.read(buffer.data(), size))
-    {
+    file.read(buffer.data(), size);
 
-    }
-    else
+    if(file.fail())
     {
         emit logError(QString("Error while reading the file ") + localpath);
+        file.close();
         return false;
     }
 
@@ -515,11 +523,23 @@ bool SSHInterface::downloadEntireFile(const char *localpath, const char *remotef
     bool success = readFile(&filebuf, &filebufsize, remotefilename);
     if(!success) return false;
 
-
     std::ofstream outfile (localpath, std::ofstream::binary);
-    outfile.write((char *)filebuf, filebufsize);
-    outfile.close();
+    if(outfile.fail())
+    {
+        emit logError(QString("Failed to open local file ") + localpath);
+        success = false;
+    }
+    else
+    {
+        outfile.write((char *)filebuf, filebufsize);
+        if(outfile.fail())
+        {
+            emit logError(QString("Failed to write to file ") + localpath);
+            success = false;
+        }
+    }
 
+    outfile.close();
 
     if(filebuf) free(filebuf);
 
@@ -891,12 +911,12 @@ bool SSHInterface::createParameterDatabase(const char *remoteparameterfile, cons
     // will probably be fixed later.
     sprintf(command, "rm parameters.db;./%s create_parameter_database %s", remoteexename, remoteparameterfile);
 
-    qDebug() << command;
+    //qDebug() << command;
 
     std::stringstream output;
     bool success = runCommand(command, output);
 
-    qDebug() << output.str().data();
+    //qDebug() << output.str().data();
 
     //TODO: Parse output to see if we actually succeeded?
 

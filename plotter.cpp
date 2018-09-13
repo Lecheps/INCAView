@@ -26,8 +26,8 @@ void Plotter::addToCache(const QVector<int>& newIDs, const QVector<QVector<doubl
 void Plotter::clearPlots()
 {
     plot_->clearPlottables();
-    resultsInfo_->clear();
     plot_->replot();
+    resultsInfo_->clear();
 }
 
 void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& resultnames, PlotMode mode, QDateTime date)
@@ -56,19 +56,6 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
             if(yval.empty()) continue; //TODO: Log warning?
 
             int cnt = yval.count();
-            QVector<double> xval(cnt);
-
-            //qDebug() << "data count: " << cnt;
-            double min = std::numeric_limits<double>::max();
-            double max = std::numeric_limits<double>::min();
-
-            for(int j = 0; j < cnt; ++j)
-            {
-                double value = yval[j];
-                xval[j] = (double)(starttime + 24*3600*j);
-                min = value < min ? value : min;
-                max = value > max ? value : max;
-            }
 
             if(cnt != 0)
             {
@@ -77,7 +64,14 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                 if(firstunassignedcolor == graphColors_.count()) firstunassignedcolor = 0; // Cycle the colors
 
                 double mean = 0;
-                for(double d : yval) mean += d;
+                double min = std::numeric_limits<double>::max();
+                double max = std::numeric_limits<double>::min();
+                for(double d : yval)
+                {
+                    min = std::min(min, d);
+                    max = std::max(max, d);
+                    mean += d;
+                }
                 mean /= (double)cnt;
                 double stddev = 0;
                 for(double d : yval) stddev += (d - mean)*(d - mean);
@@ -100,33 +94,37 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                 QCPGraph* graph = plot_->addGraph();
                 graph->setPen(QPen(color));
 
+                min = std::numeric_limits<double>::max();
+                max = std::numeric_limits<double>::min();
+
                 if(mode == PlotMode_YearlyAverages)
                 {
+                    QDateTime workingdate = date;
                     QVector<double> displayedx, displayedy;
                     min = std::numeric_limits<double>::max();
                     max = std::numeric_limits<double>::min();
 
-                    int prevyear = date.date().year();
+                    int prevyear = workingdate.date().year();
                     double sum = 0;
                     int dayscnt = 0;
                     for(int j = 0; j < cnt; ++j)
                     {
                         sum += yval[j];
                         dayscnt++;
-                        int curyear = date.date().year();
-                        if(curyear != prevyear)
+                        int curyear = workingdate.date().year();
+                        if((curyear != prevyear || (j == cnt-1)) && dayscnt > 0)
                         {
                             double value = sum / (double) dayscnt;
                             displayedy.push_back(value);
                             displayedx.push_back(QDateTime(QDate(prevyear, 1, 1)).toSecsSinceEpoch());
-                            min = value < min ? value : min;
-                            max = value > max ? value : max;
+                            min = std::min(min, value);
+                            max = std::max(max, value);
 
                             sum = 0;
                             dayscnt = 0;
                             prevyear = curyear;
                         }
-                        date = date.addDays(1);
+                        workingdate = workingdate.addDays(1);
                     }
                     QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
                     dateTicker->setDateTimeFormat("yyyy");
@@ -140,30 +138,30 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                     min = std::numeric_limits<double>::max();
                     max = std::numeric_limits<double>::min();
 
-                    QDateTime date = QDateTime::fromSecsSinceEpoch(starttime);
-                    int prevmonth = date.date().month();
-                    int prevyear = date.date().year();
+                    QDateTime workingdate = date;
+                    int prevmonth = workingdate.date().month();
+                    int prevyear = workingdate.date().year();
                     double sum = 0;
                     int dayscnt = 0;
                     for(int j = 0; j < cnt; ++j)
                     {
                         sum += yval[j];
                         dayscnt++;
-                        int curmonth = date.date().month();
-                        if(curmonth != prevmonth)
+                        int curmonth = workingdate.date().month();
+                        if((curmonth != prevmonth || (j == cnt-1)) && dayscnt > 0)
                         {
                             double value = sum / (double) dayscnt;
                             displayedy.push_back(value);
                             displayedx.push_back(QDateTime(QDate(prevyear, prevmonth, 1)).toSecsSinceEpoch());
-                            min = value < min ? value : min;
-                            max = value > max ? value : max;
+                            min = std::min(min, value);
+                            max = std::max(max, value);
 
                             sum = 0;
                             dayscnt = 0;
                             prevmonth = curmonth;
-                            prevyear = date.date().year();
+                            prevyear = workingdate.date().year();
                         }
-                        date = date.addDays(1);
+                        workingdate = workingdate.addDays(1);
                     }
                     QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
                     dateTicker->setDateTimeFormat("MMMM\nyyyy");
@@ -171,23 +169,33 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
 
                     graph->setData(displayedx, displayedy, true);
                 }
-                else
+                else //mode == PlotMode_Daily
                 {
+                    QVector<double> displayedx(cnt);
+                    for(int j = 0; j < cnt; ++j)
+                    {
+                        double value = yval[j];
+                        displayedx[j] = (double)(starttime + 24*3600*j);
+                        min = std::min(min, value);
+                        max = std::max(max, value);
+                    }
+
                     QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
                     dateTicker->setDateTimeFormat("d. MMMM\nyyyy");
                     plot_->xAxis->setTicker(dateTicker);
 
-                    graph->setData(xval, yval, true);
+                    graph->setData(displayedx, yval, true);
                 }
 
-                maxyrange = maxyrange < max ? max : maxyrange;
-                minyrange = minyrange > min ? min : minyrange;
+                maxyrange = std::max(max, maxyrange);
+                minyrange = std::min(min, minyrange);
                 if(maxyrange - minyrange < QCPRange::minRange)
                 {
                     maxyrange = minyrange + 2.0*QCPRange::minRange;
                 }
                 plot_->yAxis->setRange(minyrange, maxyrange);
-                plot_->xAxis->setRange(xval.first(), xval.last());
+                bool foundrange;
+                plot_->xAxis->setRange(graph->data()->keyRange(foundrange));
             }
         }
     }

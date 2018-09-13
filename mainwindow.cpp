@@ -10,7 +10,7 @@ MainWindow::MainWindow(QWidget *parent) :
 {
     ui->setupUi(this);
 
-    ui->lineEditUsername->setText("magnus"); //TODO: last login name should maybe be stored in a file
+    ui->lineEditUsername->setText("magnus"); //TODO: last login name should maybe be stored in a file. It should at least not be hard coded to "magnus"
 
     treeParameters_ = nullptr;
     treeResults_ = nullptr;
@@ -110,13 +110,12 @@ void MainWindow::logSSHError(const QString& message)
 
 void MainWindow::resetWindowTitle()
 {
-    //TODO: this should reflect both connection status and what db we have loaded.
     QString dbState = selectedProjectDbPath_;
     if(parametersHaveBeenEditedSinceLastSave_) dbState = "*" + dbState;
 
     QString loginState = "";
     QString username =  ui->lineEditUsername->text();
-    if(weExpectToBeConnected_) loginState = " - " + username + "@incaview-" + username; // Oops, will behave funnily if the user changes the lineEditUsername() ?
+    if(weExpectToBeConnected_) loginState = " - " + username;
 
     QString title = QString("%1%2 INCAView").arg(dbState).arg(loginState);
 
@@ -132,7 +131,7 @@ void MainWindow::on_pushConnect_clicked()
 
     QByteArray username = ui->lineEditUsername->text().toLatin1();
 
-    //TODO: Check that username is a single word in lower caps or with '-'.
+    //TODO: Check that username is a single word in lower caps or with '-'. If that is not always possible, we should generate the instance name in a different way
 
     QString instancename = QString("incaview-") + username.data();
     QByteArray instancename2 = instancename.toLatin1();
@@ -161,9 +160,11 @@ void MainWindow::on_pushLoadProject_clicked()
 {
     QString fileName = QFileDialog::getOpenFileName(this,
         tr("Open project database"), "", tr("Database files (*.db)"));
-    //TODO: test that the user did not click cancel etc.
 
-    loadParameterDatabase(fileName);
+    if(!fileName.isEmpty() && !fileName.isNull())     //NOTE: in case the user clicked cancel.
+    {
+        loadParameterDatabase(fileName);
+    }
 }
 
 void MainWindow::loadParameterDatabase(QString fileName)
@@ -172,7 +173,13 @@ void MainWindow::loadParameterDatabase(QString fileName)
     {
         if(parametersHaveBeenEditedSinceLastSave_)
         {
-            //TODO: Either just save or query if we want to save them.
+            //NOTE: Alternatively we could just save the parameters without asking?
+            QMessageBox::StandardButton resBtn = QMessageBox::question( this, tr("Loading a new database without saving."),
+                tr("If you load a new database without saving the parameters or running the model, your changes to the parameters will not be stored. Do you still want to load a new database?\n"),
+                QMessageBox::Yes | QMessageBox::No,
+                QMessageBox::Yes);
+
+            if (resBtn != QMessageBox::Yes) return;
         }
 
         if(treeResults_) delete treeResults_;
@@ -220,41 +227,40 @@ void MainWindow::on_pushCreateDatabase_clicked()
 
     QString fileName = QFileDialog::getOpenFileName(this,
         tr("Select parameter file to convert"), "", tr("Data files (*.dat)"));  //TODO: should not restrict it to .dat
-    //TODO: test that the user did not click cancel etc.
+
+    if(fileName.isEmpty() || fileName.isNull()) //NOTE: In case the user clicked cancel etc.
+    {
+        return;
+    }
 
     const char *remoteParameterFileName = "parameters.dat";
-    const char *exename = "persist"; //TODO: this should be stored somewhere, not be hard coded.
+
+    QString exepath = ui->lineEditModelname->text();
+    QByteArray exepath2 = exepath.toLatin1();
 
     QByteArray filename2 = fileName.toLatin1();
     bool success = sshInterface_->uploadEntireFile(filename2.data(), "~/", remoteParameterFileName);
 
-    if(!success)
-    {
-        //TODO
-        return;
-    }
+    if(!success) return;
 
-    success = sshInterface_->createParameterDatabase(remoteParameterFileName, exename);
+    success = sshInterface_->createParameterDatabase(remoteParameterFileName, exepath2.data());
 
-    if(!success)
-    {
-        //TODO
-        return;
-    }
+    if(!success) return;
 
     QString saveFileName = QFileDialog::getSaveFileName(this,
         tr("Select location to store database file"), "", tr("Database files (*.db)"));
-    //TODO: test that the user did not click cancel etc.
+
+    if(fileName.isEmpty() || fileName.isNull()) //NOTE: In case the user clicked cancel etc.
+    {
+        return;
+    }
+
     QByteArray saveFileName2 = saveFileName.toLatin1();
 
     //TODO: Don't hard code the location of the remote parameter database file?
     success = sshInterface_->downloadEntireFile(saveFileName2.data(), "parameters.db");
 
-    if(!success)
-    {
-        //TODO
-        return;
-    }
+    if(!success) return;
 
     loadParameterDatabase(saveFileName);
 }
@@ -406,7 +412,8 @@ void MainWindow::on_pushSaveParameters_clicked()
 
         //NOTE: Serialize parameter values and send them to the remote database
         QVector<parameter_serial_entry> parameterdata;
-        parameterModel_->serializeParameterData(parameterdata); //TODO: we should probably only save the parameters that have been changed instead of all of them..
+        //TODO: we should probably only save the parameters that have been changed instead of all of them.. However this operation is very fast, so it doesn't seem to matter.
+        parameterModel_->serializeParameterData(parameterdata);
 
         bool success = projectDb_.writeParameterValues(parameterdata);
         if(success)
@@ -416,10 +423,6 @@ void MainWindow::on_pushSaveParameters_clicked()
             editUndoStack_.clear();
 
             log("Saving parameters complete.");
-        }
-        else
-        {
-            //TODO: We should probably do some error handling here.
         }
     }
 }
@@ -482,7 +485,7 @@ void MainWindow::runModel()
 
     ui->pushRun->setEnabled(false);
 
-    log("Attempting to run INCA...");
+    log("Attempting to run Model...");
 
     on_pushSaveParameters_clicked(); //NOTE: Save the parameters to the database.
 
@@ -492,21 +495,22 @@ void MainWindow::runModel()
     QByteArray dbpath = selectedProjectDbPath_.toLatin1();
     sshInterface_->uploadEntireFile(dbpath.data(), "~/", remoteParameterDbName);
 
-    const char *remoteexepath = "persist"; //TODO: This should probably be stored and read from the local database
+    QString exepath = ui->lineEditModelname->text();
+    QByteArray exepath2 = exepath.toLatin1();
 
     //TODO: We probably should send info about what path we want for the remote result db. For now this is hard coded.
-    sshInterface_->runModel(remoteexepath, remoteParameterDbName);
+    sshInterface_->runModel(exepath2.data(), remoteParameterDbName);
 }
 
 void MainWindow::onRunINCAFinished()
 {
-    //NOTE: this is a slot that receives a signal from the sshInterface when it is complete.
+    //NOTE: this is a slot that responds to a signal from the sshInterface when the model run is complete.
 
-    log("INCA run finished.");
+    log("Model run and result output finished.");
 
     const char *remoteResultDbPath = "results.db";
 
-    //NOTE: TODO: This may not be correct: In the future, the result structure may have changed after a new model run.
+    //NOTE: TODO: This may not be correct: In the future, the result structure may have changed after a new model run if we allow changing indexes in editor or allow uploading input files.
     if(!treeResults_)
     {
         loadResultStructure(remoteResultDbPath);
@@ -568,8 +572,6 @@ void MainWindow::updateParameterView(const QItemSelection& selected, const QItem
 
 void MainWindow::updateGraphsAndResultSummary()
 {
-    qDebug() << "1 test test test";
-
     if(!weExpectToBeConnected_)
     {
         //NOTE: Should not be possible to reach this state.
@@ -584,17 +586,14 @@ void MainWindow::updateGraphsAndResultSummary()
 
     if(!treeResults_)
     {
-        plotter_->clearPlots();
+        clearGraphsAndResultSummary();
         return;
     }
-    qDebug() << "2 test test test";
 
     QModelIndexList indexes = ui->treeViewResults->selectionModel()->selectedIndexes();
 
     QVector<QString> resultNames;
     QVector<int> IDs;
-
-    qDebug() << " tes tes tes " << indexes.size();
 
     for(auto index : indexes)
     {
@@ -611,8 +610,6 @@ void MainWindow::updateGraphsAndResultSummary()
             resultNames.push_back(name + " (" + parentName + ")");
         }
     }
-
-    qDebug() << " tes tes tes " << IDs.size();
 
     if(!IDs.empty())
     {
@@ -657,7 +654,8 @@ void MainWindow::updateGraphToolTip(QMouseEvent *event)
     //NOTE: this is for changing the labelGraphValues label to print the values of the visible graphs when the mouse hovers over them.
     // It is not really a tooltip. Better name?
 
-    if(ui->widgetPlotResults->graphCount() > 0)
+    if(!(ui->radioButtonErrorHistogram->isChecked() || ui->radioButtonErrorNormalProbability->isChecked()) 
+            && ui->widgetPlotResults->graphCount() > 0)
     {
         double x = -100.0;
         if(event) x = ui->widgetPlotResults->xAxis->pixelToCoord(event->pos().x());
@@ -683,10 +681,6 @@ void MainWindow::updateGraphToolTip(QMouseEvent *event)
             {
                 valueString.append(treeResults_->getName(ID)).append(" (").append(treeResults_->getParentName(ID)).append("): ");
             }
-            else
-            {
-                valueString.append("y: ");
-            }
 
             bool foundrange;
             QCPRange range = graph->getKeyRange(foundrange);
@@ -694,10 +688,7 @@ void MainWindow::updateGraphToolTip(QMouseEvent *event)
                 valueString.append(QString::number(value, 'g', 5));
             else
             {
-                if(ui->radioButtonErrorHistogram->isChecked() || ui->radioButtonErrorNormalProbability->isChecked())
-                    valueString.append("x out of range");
-                else
-                    valueString.append("Date out of range");
+                valueString.append("Cursor outside of graph");
             }
         }
 
@@ -710,8 +701,7 @@ void MainWindow::updateGraphToolTip(QMouseEvent *event)
             dateString = QLocale().toString(date, "MMMM yyyy").append(" monthly average");
         else if(ui->radioButtonDaily->isChecked() || ui->radioButtonErrors->isChecked())
             dateString = QLocale().toString(date, "d. MMMM yyyy");
-        else
-            dateString = QString("x: %1").arg(x);
+
 
         ui->labelGraphValues->setText(QString("%1:\n%2").arg(dateString).arg(valueString));
     }
@@ -724,10 +714,9 @@ void MainWindow::updateGraphToolTip(QMouseEvent *event)
 
 void MainWindow::clearGraphsAndResultSummary()
 {
-    ui->widgetPlotResults->clearGraphs();
-    ui->widgetPlotResults->replot();
-    updateGraphToolTip(0);
-    ui->textResultsInfo->clear();
+    plotter_->clearPlots();
+    plotter_->clearCache();
+    updateGraphToolTip(nullptr);
 }
 
 
