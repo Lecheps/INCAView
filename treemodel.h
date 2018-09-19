@@ -60,9 +60,10 @@ class TreeItem;
 
 struct TreeData
 {
-    QString name;
     int ID;
     int parentID;
+    QString name;
+    QString unit;
 };
 
 //! [0]
@@ -88,6 +89,7 @@ public:
 
     QString getName(int);
     QString getParentName(int);
+    QString getUnit(int);
     int childCount(int);
 
 private:

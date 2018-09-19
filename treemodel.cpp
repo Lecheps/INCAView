@@ -64,7 +64,7 @@ TreeModel::TreeModel(const QString& colName, QObject *parent)
     : QAbstractItemModel(parent)
 {
     QList<QVariant> rootData;
-    rootData << colName << "Database ID";
+    rootData << colName << "Database ID" << "Unit";
     rootItem = new TreeItem(rootData);
     IDtoTreeItem_[0] = rootItem;
 }
@@ -72,7 +72,8 @@ TreeModel::TreeModel(const QString& colName, QObject *parent)
 void TreeModel::addItem(const TreeData& data)
 {
     QList<QVariant> itemData;
-    itemData << data.name << data.ID;
+    itemData << data.name << data.ID << data.unit;
+    //qDebug() << data.unit;
     TreeItem* parent = IDtoTreeItem_[data.parentID];
     TreeItem* item = new TreeItem(itemData, parent);
     IDtoTreeItem_[data.ID] = item;
@@ -91,6 +92,15 @@ QString TreeModel::getName(int ID)
     return "";
 }
 
+
+QString TreeModel::getUnit(int ID)
+{
+    auto treeItem = IDtoTreeItem_.find(ID);
+    if(treeItem != IDtoTreeItem_.end())
+    {
+        return treeItem->second->data(2).toString();
+    }
+}
 
 
 QString TreeModel::getParentName(int ID)

@@ -33,22 +33,25 @@ bool SQLInterface::getParameterStructure(QVector<TreeData> &structuredata)
 {
     if(dbIsSet_)
     {
-        const char *command = "SELECT parent.ID as parentID, child.ID, child.Name "
+        const char *command = "SELECT parent.ID as parentID, child.ID, child.name, child.unit "
                                       "FROM ParameterStructure as parent, ParameterStructure as child "
                                       "WHERE child.lft > parent.lft "
                                       "AND child.rgt < parent.rgt "
                                       "AND child.dpt = parent.dpt + 1 "
                                       "UNION "
-                                      "SELECT 0 as parentID, child.ID, child.Name "
+                                      "SELECT 0 as parentID, child.ID, child.Name, child.unit "
                                       "FROM ParameterStructure as child "
                                       "WHERE child.dpt = 0 "
                                       "ORDER BY child.ID";
-
         QSqlQuery query;
-        query.prepare(command);
+        if(!query.prepare(command))
+        {
+            qDebug() << query.lastError();
+        }
         if(!query.exec())
         {
             // emit logError(query.lastError());
+            qDebug() << query.lastError();
             return false;
         }
         else
@@ -59,6 +62,7 @@ bool SQLInterface::getParameterStructure(QVector<TreeData> &structuredata)
                 item.parentID = query.value(0).toInt();
                 item.ID       = query.value(1).toInt();
                 item.name     = query.value(2).toString();
+                item.unit     = query.value(3).toString();
                 structuredata.push_back(item);
             }
         }

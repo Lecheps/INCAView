@@ -50,8 +50,6 @@ private slots:
     void updateGraphToolTip(QMouseEvent *event);
     void parameterWasEdited(ParameterEditAction);
     void handleInvoluntarySSHDisconnect();
-    void onRunINCAFinished();
-    void handleRunINCAError(const QString&);
 
     void log(const QString &);
     void logError(const QString &);

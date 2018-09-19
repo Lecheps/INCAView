@@ -1,5 +1,5 @@
-#ifndef PARAMETERSERIALIZATION_H
-#define PARAMETERSERIALIZATION_H
+#ifndef SERIALIZATION_H
+#define SERIALIZATION_H
 
 #include <stdint.h>
 
@@ -18,7 +18,6 @@ struct parameter_value
 {
     union
     {
-        //NOTE: These should be the same bit size.
         double val_double;
         uint64_t val_uint;
         uint64_t val_bool;
@@ -47,14 +46,15 @@ struct structure_serial_entry
     uint32_t parentID;
     uint32_t childID;
     uint32_t childNameLen;
+	uint32_t unitLen;
 };
 
 #pragma pack(pop)
 
 #define EXPORT_RESULTS_STRUCTURE_COMMAND "export_results_structure"
-#define EXPORT_PARAMETER_STRUCTURE_COMMAND "export_parameter_structure"
+//#define EXPORT_PARAMETER_STRUCTURE_COMMAND "export_parameter_structure"
 #define EXPORT_RESULT_VALUES_COMMAND "export_result_values"
-#define EXPORT_PARAMETER_VALUES_MIN_MAX_COMMAND "export_parameter_values_min_max"
-#define IMPORT_PARAMETER_VALUES_COMMAND "import_parameter_values"
+//#define EXPORT_PARAMETER_VALUES_MIN_MAX_COMMAND "export_parameter_values_min_max"
+//#define IMPORT_PARAMETER_VALUES_COMMAND "import_parameter_values"
 
-#endif // PARAMETERSERIALIZATION_H
+#endif // SERIALIZATION_H

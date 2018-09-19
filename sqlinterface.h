@@ -1,7 +1,7 @@
 #ifndef SQLINTERFACE_H
 #define SQLINTERFACE_H
 
-#include "sqlhandler/parameterserialization.h"
+#include "sqlhandler/serialization.h"
 #include "treemodel.h"
 #include <QSqlDatabase>
 

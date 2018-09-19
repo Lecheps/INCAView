@@ -26,7 +26,7 @@ int ParameterModel::rowCount(const QModelIndex &parent) const
 
 int ParameterModel::columnCount(const QModelIndex &parent) const
 {
-    return 4;
+    return 5;
 }
 
 QVariant ParameterModel::data(const QModelIndex &index, int role) const
@@ -63,12 +63,19 @@ QVariant ParameterModel::data(const QModelIndex &index, int role) const
                 else
                     return ""; //NOTE: Don't display min/max values for bool parameters
             } break;
+            case 4:
+            {
+                if(param->type != parametertype_bool)
+                    return param->unit;
+                else
+                    return ""; //NOTE: Parameters of type bool don't have units.
+            } break;
         }
     } break;
 
     case Qt::FontRole:
     {
-        if(index.column()!=1)
+        if(index.column()!=1 && index.column() != 4)
         {
             QFont boldFont;
             boldFont.setBold(true);
@@ -114,6 +121,10 @@ QVariant ParameterModel::headerData(int section, Qt::Orientation orientation, in
         case 3:
         {
             return QString("Max");
+        } break;
+        case 4:
+        {
+            return QString("Unit");
         } break;
         }
     }
@@ -224,9 +235,9 @@ bool ParameterModel::areAllParametersInRange() const
     return result;
 }
 
-void ParameterModel::addParameter(const QString& name, int ID, int parentID, const parameter_min_max_val_serial_entry& entry)
+void ParameterModel::addParameter(const QString& name, const QString& unit, int ID, int parentID, const parameter_min_max_val_serial_entry& entry)
 {
-    Parameter *param = new Parameter(name, ID, parentID, entry);
+    Parameter *param = new Parameter(name, unit, ID, parentID, entry);
     IDtoParam_[ID] = param;
 }
 

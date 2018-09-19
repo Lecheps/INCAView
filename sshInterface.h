@@ -1,9 +1,9 @@
-#ifndef SSHTEST_H
-#define SSHTEST_H
+#ifndef SSHINTERFACE_H
+#define SSHINTERFACE_H
 
 #include <libssh/libssh.h>
 #include <libssh/callbacks.h>
-#include "sqlhandler/parameterserialization.h"
+#include "sqlhandler/serialization.h"
 #include "treemodel.h"
 #include <QThread>
 #include <QTimer>
@@ -19,24 +19,6 @@
 #endif
 
 
-//NOTE: SSHRunIncaWorker is used for calling and monitoring the output of INCA
-//in a separate thread while the rest of the program continues its business.
-class SSHRunModelWorker : public QObject
-{
-    Q_OBJECT
-
-public:
-    void runModel(const char *, const char *, const char *exename, const char *);
-    virtual ~SSHRunModelWorker();
-signals:
-    void resultReady();
-    void log(const QString&);
-    void reportError(const QString&);
-private:
-    ssh_session inca_run_session;
-    ssh_channel inca_run_channel;
-};
-
 class SSHInterface : public QObject
 {
     Q_OBJECT
@@ -49,12 +31,7 @@ public:
     bool destroyInstance();
     bool isInstanceConnected();
 
-
-    //void getProjectList(const char *remoteDB, const char *username, QVector<ProjectSpec> &outdata);
     bool getResultsStructure(const char *remoteDB, QVector<TreeData> &structuredata);
-    //void getParameterStructure(const char *remoteDB, QVector<TreeData> &structuredata);
-    //void getParameterValuesMinMax(const char *remoteDB, std::map<uint32_t, parameter_min_max_val_serial_entry>& IDtoParam);
-    //void writeParameterValues(const char *remoteDB, QVector<parameter_serial_entry>& writedata);
     bool getResultSets(const char *remoteDB, const QVector<int>& IDs, QVector<QVector<double>> &valuedata);
     bool uploadEntireFile(const char *localpath, const char *remotelocation, const char *remotefilename);
     bool downloadEntireFile(const char *localpath, const char *remotefilename);
@@ -64,8 +41,6 @@ public:
     const char * getDisconnectionMessage();
 
     void runModel(const char *exename, const char *remoteDB);
-    void handleIncaFinished();
-    void handleRunINCAError(const QString&);
 
     void sendNoop();
 
@@ -88,28 +63,23 @@ private:
     std::string hubUsername_;
     std::string hubKey_;
 
-
-    QThread incaWorkerThread_;
     QTimer *sendNoopTimer;
 
     bool connectSession(const char *username, const char *serveraddress, const char *keyfile);
     void disconnectSession();
     bool isSessionConnected();
 
-    bool runCommand(const char *command, std::stringstream &out);
+    bool runCommand(const char *command, std::stringstream &out, bool logAsItHappens = false);
     bool writeFile(const void *contents, size_t contentssize, const char *remotelocation, const char *remotefilename);
     bool readFile(void **buffer, size_t *buffersize, const char *remotefilename);
     bool runSqlHandler(const char *command, const char *db, const char *tempfile, const QVector<QString> *extraParam = 0);
     bool getStructureData(const char *remoteDB, const char *command, QVector<TreeData> &outdata);
 
-    void generateRandomTransactionFileName(char *outfilename, const char *dbname);
-    void deleteTransactionFile(char *filename);
+    void deleteTransactionFile(const char *filename);
 
 signals:
     void log(const QString&);
     void logError(const QString&);
-    void runINCAFinished();
-    void runINCAError(const QString&);
 };
 
-#endif // SSHTEST_H
+#endif // SSHINTERFACE_H

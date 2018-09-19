@@ -34,10 +34,10 @@ HEADERS  += mainwindow.h \
     parameter.h \
     parametermodel.h \
     sshInterface.h \
-    sqlhandler/parameterserialization.h \
     parametereditdelegate.h \
     plotter.h \
-    sqlinterface.h
+    sqlinterface.h \
+    sqlhandler/serialization.h
 
 FORMS    += mainwindow.ui
 
@@ -51,7 +51,7 @@ INCLUDEPATH += $$PWD/include
                #$$PWD/../INCA/INCA/libraries/sqlite3\
                #$$PWD/../INCA/INCA/libraries/boost/include\
 
-DEPENDPATH += $$PWD/../INCA/INCA/libraries/sqlite3
+#DEPENDPATH += $$PWD/../INCA/INCA/libraries/sqlite3
 
 
 PRE_TARGETDEPS += $$PWD/lib/libssh.dll.a

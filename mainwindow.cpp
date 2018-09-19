@@ -2,7 +2,7 @@
 #include "ui_mainwindow.h"
 #include <functional>
 #include "sshInterface.h"
-#include "sqlhandler/parameterserialization.h"
+#include "sqlhandler/serialization.h"
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -67,8 +67,6 @@ MainWindow::MainWindow(QWidget *parent) :
 
     QObject::connect(sshInterface_, &SSHInterface::log, this, &MainWindow::log);
     QObject::connect(sshInterface_, &SSHInterface::logError, this, &MainWindow::logSSHError);
-    QObject::connect(sshInterface_, &SSHInterface::runINCAFinished, this, &MainWindow::onRunINCAFinished);
-    QObject::connect(sshInterface_, &SSHInterface::runINCAError, this, &MainWindow::handleRunINCAError);
 
     plotter_ = new Plotter(ui->widgetPlotResults, ui->textResultsInfo);
 
@@ -198,6 +196,7 @@ void MainWindow::loadParameterDatabase(QString fileName)
         ui->treeViewParameters->expandToDepth(3);
         ui->treeViewParameters->resizeColumnToContents(0);
         ui->treeViewParameters->setColumnHidden(1, true);
+        ui->treeViewParameters->setColumnHidden(2, true);
 
         if(sshInterface_->isInstanceConnected()) ui->pushRun->setEnabled(true);
 
@@ -291,7 +290,7 @@ void MainWindow::loadParameterData()
             {
                 //This ID corresponds to a parameter, and so we add it to the parameter model.
                 parameter_min_max_val_serial_entry& par = parref->second;
-                parameterModel_->addParameter(data.name, data.ID, data.parentID, par);
+                parameterModel_->addParameter(data.name, data.unit, data.ID, data.parentID, par);
             }
         }
 
@@ -341,6 +340,7 @@ void MainWindow::loadResultStructure(const char *remotedbpath)
     ui->treeViewResults->expandToDepth(3);
     ui->treeViewResults->resizeColumnToContents(0);
     ui->treeViewResults->setColumnHidden(1, true);
+    ui->treeViewResults->setColumnHidden(2, true);
 }
 
 void MainWindow::setWeExpectToBeConnected(bool connected)
@@ -500,17 +500,12 @@ void MainWindow::runModel()
 
     //TODO: We probably should send info about what path we want for the remote result db. For now this is hard coded.
     sshInterface_->runModel(exepath2.data(), remoteParameterDbName);
-}
-
-void MainWindow::onRunINCAFinished()
-{
-    //NOTE: this is a slot that responds to a signal from the sshInterface when the model run is complete.
 
     log("Model run and result output finished.");
 
     const char *remoteResultDbPath = "results.db";
 
-    //NOTE: TODO: This may not be correct: In the future, the result structure may have changed after a new model run if we allow changing indexes in editor or allow uploading input files.
+    //NOTE: TODO: This may not be correct: In the future, the result structure may have changed after a new model run if we allow changing indexes in editor.
     if(!treeResults_)
     {
         loadResultStructure(remoteResultDbPath);
@@ -519,18 +514,9 @@ void MainWindow::onRunINCAFinished()
     plotter_->clearCache();
 
     updateGraphsAndResultSummary(); //In case somebody had a graph selected, it is updated with a plot of the data generated from the last run.
-    ui->pushRun->setEnabled(true);    
-}
-
-void MainWindow::handleRunINCAError(const QString& message)
-{
-    //NOTE: this is a slot that receives a signal from the sshInterface.
-
-    logError(message);
-
     ui->pushRun->setEnabled(true);
-    //TODO: other cleanup?
 }
+
 
 void MainWindow::closeEvent (QCloseEvent *event)
 {
@@ -607,7 +593,8 @@ void MainWindow::updateGraphsAndResultSummary()
             }
             QString name = treeResults_->getName(ID);
             QString parentName = treeResults_->getParentName(ID);
-            resultNames.push_back(name + " (" + parentName + ")");
+            QString unit = treeResults_->getUnit(ID);
+            resultNames.push_back(name + " (" + parentName + ") " + unit);
         }
     }
 

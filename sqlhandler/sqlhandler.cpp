@@ -32,285 +32,53 @@ typedef uint32_t u32;
 typedef int64_t s64;
 typedef double f64;
 
-#include "parameterserialization.h"
+#include "serialization.h"
 
-void print_parameter_value(char *buffer, parameter_serial_entry *entry)
-{
-	parameter_type type = (parameter_type)entry->type;
-	switch(type)
-	{
-		case parametertype_double:
-		{
-			sprintf(buffer, "%f", entry->value.val_double);
-		} break;
-		
-		case parametertype_uint:
-		{
-			sprintf(buffer, "%u", entry->value.val_uint);
-		} break;
-		
-		case parametertype_bool:
-		{
-			sprintf(buffer, "%d", entry->value.val_bool);
-		} break;
-		
-		case parametertype_ptime:
-		{
-			sprintf(buffer, "%d", entry->value.val_ptime);
-		} break;
-	}
-}
-
-parameter_type parse_parameter_type(const char *typestr)
-{
-	parameter_type type = parametertype_notsupported;
-	
-	if(strcmp(typestr, "DOUBLE") == 0) type = parametertype_double;
-	else if(strcmp(typestr, "UINT") == 0) type = parametertype_uint;
-	else if(strcmp(typestr, "BOOL") == 0) type = parametertype_bool;
-	else if(strcmp(typestr, "PTIME") == 0) type = parametertype_ptime;
-	
-	return type;
-}
-
-
-static int export_structure_callback(void *data, int argc, char **argv, char **colname)
-{
-	FILE *file = (FILE *)data;
-
-	assert(argc == 3);
-	structure_serial_entry outdata;
-	outdata.parentID = atoi(argv[0]);
-	outdata.childID = atoi(argv[1]);
-	char *childName = argv[2];
-	outdata.childNameLen = strlen(childName);
-	
-	//fprintf(stdout, "%u %u %u %s\n", outdata.parentID, outdata.childID, outdata.childNameLen, childName);
-	
-	fwrite(&outdata, sizeof(outdata), 1, file);
-	fwrite(childName, outdata.childNameLen, 1, file);
-	return 0;
-}
-
-bool export_parameter_structure(sqlite3 *db, FILE *file)
-{
-	const char *sqlcommand = "SELECT parent.ID as parentID, child.ID, child.Name "
-                              "FROM ParameterStructure as parent, ParameterStructure as child "
-                              "WHERE child.lft > parent.lft "
-                              "AND child.rgt < parent.rgt "
-                              "AND child.dpt = parent.dpt + 1 "
-                              "UNION "
-                              "SELECT 0 as parentID, child.ID, child.Name " 
-                              "FROM ParameterStructure as child "
-                              "WHERE child.dpt = 0 "
-							  "ORDER BY child.ID";
-	char *errmsg = 0;
-	int rc = sqlite3_exec(db, sqlcommand, export_structure_callback, (void *)file, &errmsg);
-	
-	if( rc != SQLITE_OK )
-	{
-		fprintf(stdout, "ERROR: SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		fclose(file);
-		return false;
-	}
-	
-	return true;
-}
 
 bool export_results_structure(sqlite3 *db, FILE *file)
 {
-	const char *sqlcommand = "SELECT parent.ID AS parentID, child.ID, child.Name "
+	const char *sqlcommand = "SELECT parent.ID AS parentID, child.ID, child.name, child.unit "
 							 "FROM ResultsStructure AS parent, ResultsStructure AS child "
 							 "WHERE child.lft > parent.lft "
 							 "AND child.rgt < parent.rgt "
 							 "AND child.dpt = parent.dpt + 1 "
 							 "UNION "
-							 "SELECT 0 as parentID, child.ID, child.Name "
+							 "SELECT 0 as parentID, child.ID, child.name, child.unit "
 							 "FROM ResultsStructure as child "
 							 "WHERE child.dpt = 0 "
 							 "ORDER BY child.ID";
-	char *errmsg = 0;
-	int rc = sqlite3_exec(db, sqlcommand, export_structure_callback, (void *)file, &errmsg);
+	
+	sqlite3_stmt *statement;
+	int rc = sqlite3_prepare_v2(db, sqlcommand, -1, &statement, 0);
 	
 	if( rc != SQLITE_OK )
 	{
-		fprintf(stdout, "ERROR: SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		fclose(file);
+		fprintf(stdout, "ERROR: SQL error: %s\n", sqlite3_errmsg(db));
 		return false;
 	}
 	
-	return true;
-}
-
-
-bool export_parameter_values_min_max(sqlite3 *db, FILE *file)
-{
-	const char *value_tables[4] =
+	while((rc = sqlite3_step(statement)) != SQLITE_DONE)
 	{
-		"bool",
-		"double",
-		"int",
-		"ptime",
-	};
-	
-	parameter_type types[4] =
-	{
-		parametertype_bool,
-		parametertype_double,
-		parametertype_uint,
-		parametertype_ptime,
-	};
-	
-	for(int i = 0; i < 4; ++i)
-	{
-		char commandbuf[512];
-		sprintf(commandbuf,
-			"SELECT "
-			 "ParameterStructure.ID, ParameterStructure.type, ParameterValues_%s.minimum, ParameterValues_%s.maximum, ParameterValues_%s.value "
-			 "FROM ParameterStructure INNER JOIN ParameterValues_%s "
-			 "ON ParameterStructure.ID = ParameterValues_%s.ID; ",
-			 value_tables[i], value_tables[i], value_tables[i], value_tables[i], value_tables[i]);
-		sqlite3_stmt *stmt;
-		int rc = sqlite3_prepare_v2(db, commandbuf, -1, &stmt, 0);
-		if(rc != SQLITE_OK)
-		{
-			fprintf(stdout, "ERROR; SQL, could not prepare statement %s\n", commandbuf);
-			return false;
-		}
-		rc = sqlite3_step(stmt);
-		while(rc == SQLITE_ROW)
-		{
-			parameter_min_max_val_serial_entry entry;
-			entry.ID = sqlite3_column_int(stmt, 0);
-			const char *typetxt = (const char *)sqlite3_column_text(stmt, 1); // NOTE: The cast should be ok since we only use ASCII
-			entry.type = parse_parameter_type(typetxt);
-			if(entry.type != types[i])
-			{
-				fprintf(stdout, "ERROR: Database: Parameter with ID %d is registered as having type %s, but is in the table for %s.\n",
-					entry.ID, typetxt, value_tables[i]);
-				return false;
-			}
-			switch(types[i])
-			{
-				case parametertype_bool :
-				{
-					entry.min.val_bool = sqlite3_column_int(stmt, 2);
-					entry.max.val_bool = sqlite3_column_int(stmt, 3);
-					entry.value.val_bool = sqlite3_column_int(stmt, 4);
-				} break;
-				
-				case parametertype_double :
-				{
-					entry.min.val_double = sqlite3_column_double(stmt, 2);
-					entry.max.val_double = sqlite3_column_double(stmt, 3);
-					entry.value.val_double = sqlite3_column_double(stmt, 4);
-				} break;
-				
-				case parametertype_uint :
-				{
-					entry.min.val_uint = sqlite3_column_int(stmt, 2);
-					entry.max.val_uint = sqlite3_column_int(stmt, 3);
-					entry.value.val_uint = sqlite3_column_int(stmt, 4);
-				} break;
-				
-				case parametertype_ptime :
-				{
-					entry.min.val_ptime = sqlite3_column_int64(stmt, 2);
-					entry.max.val_ptime = sqlite3_column_int64(stmt, 3);
-					entry.value.val_ptime = sqlite3_column_int64(stmt, 4);
-				} break;
-			}
-			
-			fwrite(&entry, sizeof(parameter_min_max_val_serial_entry), 1, file);
-			
-			rc = sqlite3_step(stmt);
-		}
 		if(rc == SQLITE_ERROR)
 		{
-			fprintf(stdout, "ERROR: SQL Error in stepping through statement while reading parameters.\n");
-			return false;
-		}
-		else if(rc != SQLITE_DONE)
-		{
-			fprintf(stdout, "ERROR: SQL Unknown mishap in stepping through statement while reading parameters.\n");
-			return false;
-		}
-	}
-	
-	return true;
-}
-
-
-
-bool import_parameter_values(sqlite3 *db, FILE *file)
-{
-	const char *sqlcommand[4] =
-	{
-		"UPDATE ParameterValues_bool SET value = ? WHERE ID = ?;",
-		"UPDATE ParameterValues_double SET value = ? WHERE ID = ?;",
-		"UPDATE ParameterValues_int SET value = ? WHERE ID = ?;",
-		"UPDATE ParameterValues_ptime SET value = ? WHERE ID = ?;",
-	};
-	
-	u64 numparameters;
-	fread(&numparameters, sizeof(u64), 1, file);
-	for(int i = 0; i < numparameters; ++i)
-	{
-		parameter_serial_entry entry;
-		fread(&entry, sizeof(parameter_serial_entry), 1, file);
-		
-		const char *command = sqlcommand[entry.type];
-		sqlite3_stmt *stmt;
-		int rc = sqlite3_prepare_v2(db, command, -1, &stmt, 0);
-		if(rc != SQLITE_OK)
-		{
-			fprintf(stdout, "ERROR; SQL, could not prepare statement %s\n", command);
+			fprintf(stdout, "ERROR: SQL error: %s\n", sqlite3_errmsg(db));
 			return false;
 		}
 		
-		sqlite3_bind_int(stmt, 2, entry.ID);
-		switch(entry.type)
-		{
-			case parametertype_double:
-			{
-				sqlite3_bind_double(stmt, 1, entry.value.val_double);
-			} break;
-			
-			case parametertype_bool:
-			{
-				sqlite3_bind_int(stmt, 1, entry.value.val_bool);
-			} break;
-			
-			case parametertype_uint:
-			{
-				sqlite3_bind_int(stmt, 1, entry.value.val_uint);
-			} break;
-			
-			case parametertype_ptime:
-			{
-				sqlite3_bind_int64(stmt, 1, entry.value.val_ptime);
-			} break;
-			
-			default:
-			{
-				fprintf(stdout, "ERROR: Received unknown parameter type for parameter with ID %d", entry.ID);
-				return false;
-			} break;
-		}
-		rc = sqlite3_step(stmt);
-		if(rc == SQLITE_ERROR)
-		{
-			fprintf(stdout, "ERROR: SQL Error in stepping through statement while storing parameters: %s\n", sqlite3_errmsg(db));
-			return false;
-		}
-		else if(rc != SQLITE_DONE)
-		{
-			fprintf(stdout, "ERROR: SQL Unknown mishap in stepping through statement while storing parameters.\n");
-			return false;
-		}
+		structure_serial_entry outdata = {};
+		outdata.parentID = sqlite3_column_int(statement, 0);
+		outdata.childID  = sqlite3_column_int(statement, 1);
+		const char *childName = (const char *)sqlite3_column_text(statement, 2);
+		outdata.childNameLen = strlen(childName);
+		const char *unitName = (const char *)sqlite3_column_text(statement, 3);
+		if(unitName) outdata.unitLen = strlen(unitName);
+		
+		fwrite(&outdata, sizeof(outdata), 1, file);
+		fwrite(childName, 1, outdata.childNameLen, file);
+		if(unitName) fwrite(unitName, 1, outdata.unitLen, file);
 	}
+	
+	sqlite3_finalize(statement);
 	
 	return true;
 }
@@ -385,10 +153,6 @@ static bool export_result_values(sqlite3 *db, u32 numrequests, u32* requested_id
 }
 
 
-void test_result_values_file(const char *filename);
-void test_structure_file(const char *filename);
-void write_parameter_import_test_file(const char *filename);
-
 int main(int argc, char *argv[])
 {
 	assert(sizeof(f64)==8);
@@ -398,16 +162,8 @@ int main(int argc, char *argv[])
 		char *dbname = argv[2];
 		char *filename = argv[3];
 		sqlite3 *db;
-		FILE *file;
-		if(strcmp(argv[1], IMPORT_PARAMETER_VALUES_COMMAND) == 0)
-		{
-			file = fopen(filename, "r");
-		}
-		else
-		{
-			file = fopen(filename, "w");
-		}
-		
+		FILE *file = fopen(filename, "w");
+
 		if(!file)
 		{
 			fprintf(stdout, "ERROR: Unable to open file %s", filename);
@@ -443,26 +199,9 @@ int main(int argc, char *argv[])
 				//test_result_values_file(filename);
 			}
 		}
-		else if(strcmp(argv[1], IMPORT_PARAMETER_VALUES_COMMAND) == 0)
-		{
-			//write_parameter_import_test_file((filename);
-			
-			success = import_parameter_values(db, file);
-		}
 		else if(strcmp(argv[1], EXPORT_RESULTS_STRUCTURE_COMMAND) == 0)
 		{
 			success = export_results_structure(db, file);
-			
-			//test_structure_file(filename);
-		}
-		else if(strcmp(argv[1], EXPORT_PARAMETER_STRUCTURE_COMMAND) == 0)
-		{
-			success = export_parameter_structure(db, file);
-			//test_structure_file(filename);
-		}
-		else if(strcmp(argv[1], EXPORT_PARAMETER_VALUES_MIN_MAX_COMMAND) == 0)
-		{
-			success = export_parameter_values_min_max(db, file);
 		}
 		else
 		{
@@ -489,7 +228,7 @@ int main(int argc, char *argv[])
 
 
 //////////// TESTS /////////////////////
-
+/*
 void test_result_values_file(const char *filename)
 {
 	fprintf(stdout, "Testing the result values file:\n");
@@ -549,3 +288,4 @@ void write_parameter_import_test_file(const char *filename)
 	
 	fclose(file);
 }
+*/
