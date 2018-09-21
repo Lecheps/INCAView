@@ -73,7 +73,6 @@ void TreeModel::addItem(const TreeData& data)
 {
     QList<QVariant> itemData;
     itemData << data.name << data.ID << data.unit;
-    //qDebug() << data.unit;
     TreeItem* parent = IDtoTreeItem_[data.parentID];
     TreeItem* item = new TreeItem(itemData, parent);
     IDtoTreeItem_[data.ID] = item;

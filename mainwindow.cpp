@@ -14,6 +14,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
     treeParameters_ = nullptr;
     treeResults_ = nullptr;
+    treeInputs_  = nullptr;
     parameterModel_ = nullptr;
 
     ui->radioButtonDaily->click();
@@ -34,10 +35,11 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->tableViewParameters->setEditTriggers(QAbstractItemView::AllEditTriggers);
 
     ui->pushSaveParameters->setEnabled(false);
-
     ui->pushCreateDatabase->setEnabled(false);
+    ui->pushUploadInputs->setEnabled(false);
 
     ui->treeViewResults->setSelectionMode(QTreeView::ExtendedSelection); // Allows to ctrl-select multiple items.
+    ui->treeViewInputs->setSelectionMode(QTreeView::ExtendedSelection); // Allows to ctrl-select multiple items.
 
     //NOTE: we override the ctrl-c functionality in order to copy the table view correctly.
     //So anything that should be copyable to the clipboard has to be explicitly handled in MainWindow::copyToClipboard.
@@ -82,7 +84,12 @@ MainWindow::~MainWindow()
 
 void MainWindow::log(const QString& Message)
 {
+    QScrollBar *bar = ui->textLog->verticalScrollBar();
+    bool isatbottom = (bar->value() == bar->maximum());
+
     ui->textLog->append(QTime::currentTime().toString("hh:mm:  ") + Message);
+
+    if(isatbottom) bar->setValue(bar->maximum()); //If it was at the bottom, scroll it down to the new bottom.
     QApplication::processEvents();
 }
 
@@ -264,6 +271,35 @@ void MainWindow::on_pushCreateDatabase_clicked()
     loadParameterDatabase(saveFileName);
 }
 
+void MainWindow::on_pushUploadInputs_clicked()
+{
+    if(!weExpectToBeConnected_)
+    {
+        //NOTE: This should not be possible. The button should not be active in that case.
+        return;
+    }
+    if(!sshInterface_->isInstanceConnected())
+    {
+        handleInvoluntarySSHDisconnect();
+        return;
+    }
+
+    QString fileName = QFileDialog::getOpenFileName(this,
+        tr("Select input file to upload"), "", tr("Data files (*.dat)"));  //TODO: should not restrict it to .dat
+
+    if(fileName.isEmpty() || fileName.isNull()) //NOTE: In case the user clicked cancel etc.
+    {
+        return;
+    }
+
+    const char *remoteInputFileName = "uploadedinputs.dat";
+
+    QByteArray filename2 = fileName.toLatin1();
+    bool success = sshInterface_->uploadEntireFile(filename2.data(), "~/", remoteInputFileName);
+
+    if(success) inputFileWasUploaded_ = true;
+}
+
 void MainWindow::loadParameterData()
 {
     if(projectDb_.databaseIsSet())
@@ -309,24 +345,50 @@ void MainWindow::loadParameterData()
     }
 }
 
-void MainWindow::loadResultStructure(const char *remotedbpath)
+void MainWindow::loadResultAndInputStructure(const char *remoteResultDb, const char *RemoteInputDb)
 {
     QVector<TreeData> resultstreedata;
-    bool success = sshInterface_->getResultsStructure(remotedbpath, resultstreedata);
+    bool success = sshInterface_->getStructureData(remoteResultDb, "ResultsStructure", resultstreedata);
+
+    QVector<TreeData> inputtreedata;
+    success = success && sshInterface_->getStructureData(RemoteInputDb, "InputsStructure", inputtreedata);
+
     if(!success) return;
 
+    // Setup result structure
     if(treeResults_) delete treeResults_;
 
-    treeResults_ = new TreeModel("Results Structure");
+    treeResults_ = new TreeModel("Results structure");
 
+    maxresultID_ = 0;
     for(TreeData& item : resultstreedata)
     {
         treeResults_->addItem(item);
+        maxresultID_ = item.ID > maxresultID_ ? item.ID : maxresultID_;
     }
 
     ui->treeViewResults->setModel(treeResults_);
 
     QObject::connect(ui->treeViewResults->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateGraphsAndResultSummary);
+
+    // Setup input structure
+    if(treeInputs_) delete treeInputs_;
+
+    treeInputs_ = new TreeModel("Input structure");
+
+    for(TreeData &item : inputtreedata)
+    {
+        //NOTE: We remap the input IDs so that they don't overlap with the result IDs. This makes every timeseries have a unique internal ID in INCAView, and simplifies the Plotter a bit.
+        item.ID += maxresultID_;
+        if(item.parentID != 0) item.parentID += maxresultID_; //NOTE: parentID=0 just signifies that it does not have a parent, so that should stay 0.
+        treeInputs_->addItem(item);
+    }
+
+    ui->treeViewInputs->setModel(treeInputs_);
+
+    QObject::connect(ui->treeViewInputs->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateGraphsAndResultSummary);
+
+    qDebug() << "blablabla";
 
     //TODO: The following should be done somewhere else?
 
@@ -341,6 +403,11 @@ void MainWindow::loadResultStructure(const char *remotedbpath)
     ui->treeViewResults->resizeColumnToContents(0);
     ui->treeViewResults->setColumnHidden(1, true);
     ui->treeViewResults->setColumnHidden(2, true);
+
+    ui->treeViewInputs->expandToDepth(3);
+    ui->treeViewInputs->resizeColumnToContents(0);
+    ui->treeViewInputs->setColumnHidden(1, true);
+    ui->treeViewInputs->setColumnHidden(2, true);
 }
 
 void MainWindow::setWeExpectToBeConnected(bool connected)
@@ -354,6 +421,7 @@ void MainWindow::setWeExpectToBeConnected(bool connected)
         ui->pushDisconnect->setEnabled(true);
         if(projectDb_.databaseIsSet()) ui->pushRun->setEnabled(true);
         ui->pushCreateDatabase->setEnabled(true);
+        ui->pushUploadInputs->setEnabled(true);
     }
     else
     {
@@ -362,6 +430,7 @@ void MainWindow::setWeExpectToBeConnected(bool connected)
         ui->pushDisconnect->setEnabled(false);
         ui->pushRun->setEnabled(false);
         ui->pushCreateDatabase->setEnabled(false);
+        ui->pushUploadInputs->setEnabled(false);
         ui->radioButtonDaily->setEnabled(false);
         ui->radioButtonMonthlyAverages->setEnabled(false);
         ui->radioButtonYearlyAverages->setEnabled(false);
@@ -381,7 +450,10 @@ void MainWindow::on_pushDisconnect_clicked()
     setWeExpectToBeConnected(false);
 
     if(treeResults_) delete treeResults_; //NOTE: The destructor of the QAbstractItemModel automatically disconnects it from it's view.
-    treeResults_ = 0;
+    treeResults_ = nullptr;
+
+    if(treeInputs_) delete treeInputs_;
+    treeInputs_ = nullptr;
 
     clearGraphsAndResultSummary();
 }
@@ -396,7 +468,10 @@ void MainWindow::handleInvoluntarySSHDisconnect()
     setWeExpectToBeConnected(false);
 
     if(treeResults_) delete treeResults_; //NOTE: The destructor of the QAbstractItemModel automatically disconnects it from it's view.
-    treeResults_ = 0;
+    treeResults_ = nullptr;
+
+    if(treeInputs_) delete treeInputs_;
+    treeInputs_ = nullptr;
 
     clearGraphsAndResultSummary();
 
@@ -499,16 +574,18 @@ void MainWindow::runModel()
     QByteArray exepath2 = exepath.toLatin1();
 
     //TODO: We probably should send info about what path we want for the remote result db. For now this is hard coded.
-    sshInterface_->runModel(exepath2.data(), remoteParameterDbName);
+    const char *remoteInputFile = inputFileWasUploaded_ ? "uploadedinputs.dat" : nullptr;
+    sshInterface_->runModel(exepath2.data(), remoteInputFile);
 
     log("Model run and result output finished.");
 
     const char *remoteResultDbPath = "results.db";
+    const char *remoteInputDbPath  = "inputs.db";
 
     //NOTE: TODO: This may not be correct: In the future, the result structure may have changed after a new model run if we allow changing indexes in editor.
     if(!treeResults_)
     {
-        loadResultStructure(remoteResultDbPath);
+        loadResultAndInputStructure(remoteResultDbPath, remoteInputDbPath);
     }
 
     plotter_->clearCache();
@@ -570,18 +647,18 @@ void MainWindow::updateGraphsAndResultSummary()
         return;
     }
 
-    if(!treeResults_)
+    if(!treeResults_ || !treeInputs_)
     {
         clearGraphsAndResultSummary();
         return;
     }
 
-    QModelIndexList indexes = ui->treeViewResults->selectionModel()->selectedIndexes();
+    QModelIndexList resultindexes = ui->treeViewResults->selectionModel()->selectedIndexes();
 
-    QVector<QString> resultNames;
-    QVector<int> IDs;
+    QVector<QString> names;
 
-    for(auto index : indexes)
+    QVector<int> resultIDs;
+    for(auto index : resultindexes)
     {
         if(index.column() == 0)
         {
@@ -589,42 +666,81 @@ void MainWindow::updateGraphsAndResultSummary()
             int ID = (treeResults_->itemData(idx))[0].toInt();
             if( ID != 0 && treeResults_->childCount(ID) == 0) //NOTE: If it has children in the tree, it is an indexer or index, not a result series.
             {
-                IDs.push_back(ID);
-            }
-            QString name = treeResults_->getName(ID);
-            QString parentName = treeResults_->getParentName(ID);
-            QString unit = treeResults_->getUnit(ID);
-            resultNames.push_back(name + " (" + parentName + ") " + unit);
+                resultIDs.push_back(ID);
+                QString name = treeResults_->getName(ID);
+                QString parentName = treeResults_->getParentName(ID);
+                QString unit = treeResults_->getUnit(ID);
+                names.push_back(name + " (" + parentName + ") " + unit);
+            }  
         }
     }
 
-    if(!IDs.empty())
-    {
-        PlotMode mode = PlotMode_Daily;
-        if(ui->radioButtonMonthlyAverages->isChecked()) mode = PlotMode_MonthlyAverages;
-        else if(ui->radioButtonYearlyAverages->isChecked()) mode = PlotMode_YearlyAverages;
-        else if(ui->radioButtonErrors->isChecked()) mode = PlotMode_Error;
-        else if(ui->radioButtonErrorHistogram->isChecked()) mode = PlotMode_ErrorHistogram;
-        else if(ui->radioButtonErrorNormalProbability->isChecked()) mode = PlotMode_ErrorNormalProbability;
+    QModelIndexList inputindexes = ui->treeViewInputs->selectionModel()->selectedIndexes();
 
-        QVector<int> uncachedIDs;
-        plotter_->filterUncachedIDs(IDs, uncachedIDs);
+    QVector<int> inputIDs;
+    for(auto index : inputindexes)
+    {
+        auto idx = index.model()->index(index.row(), index.column() + 1, index.parent());
+        int ID = (treeInputs_->itemData(idx))[0].toInt();
+        if(ID != 0 && treeInputs_->childCount(ID) == 0)
+        {
+            inputIDs.push_back(ID);
+            QString name = treeInputs_->getName(ID);
+            QString parentName = treeInputs_->getParentName(ID);
+            QString unit = treeInputs_->getUnit(ID);
+            names.push_back(name + " (" + parentName + ") " + unit);
+        }
+    }
+
+    if(!resultIDs.empty() || !inputIDs.empty())
+    {
+        QVector<int> uncachedResultIDs;
+        plotter_->filterUncachedIDs(resultIDs, uncachedResultIDs);
 
         bool success = true;
-        if(!uncachedIDs.empty())
+        if(!uncachedResultIDs.empty())
         {
             //TODO: Formalize the paths to the remote databases in some way so that they are not just scattered around in the code.
             const char *remoteResultDbPath = "results.db";
             QVector<QVector<double>> resultsets;
-            success = sshInterface_->getResultSets(remoteResultDbPath, uncachedIDs, resultsets);
-            plotter_->addToCache(uncachedIDs, resultsets);
+            success = sshInterface_->getDataSets(remoteResultDbPath, uncachedResultIDs, "Results", resultsets);
+            plotter_->addToCache(uncachedResultIDs, resultsets);
+        }
+
+        QVector<int> uncachedInputIDs;
+        plotter_->filterUncachedIDs(inputIDs, uncachedInputIDs);
+
+        if(!uncachedInputIDs.empty())
+        {
+            for(int &ID : uncachedInputIDs) ID -= maxresultID_; //NOTE: remap the input IDs back so that we can use them to request from the database.
+
+            //TODO: Formalize the paths to the remote databases in some way so that they are not just scattered around in the code.
+            const char *remoteInputDbPath = "inputs.db";
+            QVector<QVector<double>> inputsets;
+            success = sshInterface_->getDataSets(remoteInputDbPath, uncachedInputIDs, "Inputs", inputsets);
+
+            for(int &ID : uncachedInputIDs) ID += maxresultID_; //NOTE: map them back AGAIN because we now talk to the internal system.
+
+            plotter_->addToCache(uncachedInputIDs, inputsets);
         }
 
         if(success)
         {
-           //NOTE: Using the currentDateTime is temporary. Instead we should load the dates from the result database
+            PlotMode mode = PlotMode_Daily;
+            if(ui->radioButtonMonthlyAverages->isChecked()) mode = PlotMode_MonthlyAverages;
+            else if(ui->radioButtonYearlyAverages->isChecked()) mode = PlotMode_YearlyAverages;
+            else if(ui->radioButtonErrors->isChecked()) mode = PlotMode_Error;
+            else if(ui->radioButtonErrorHistogram->isChecked()) mode = PlotMode_ErrorHistogram;
+            else if(ui->radioButtonErrorNormalProbability->isChecked()) mode = PlotMode_ErrorNormalProbability;
+
+           //TODO: Using the currentDateTime is temporary. Instead we should load the dates from the database
             QDateTime date = QDateTime::currentDateTime();
-            plotter_->plotGraphs(IDs, resultNames, mode, date);
+
+            QVector<int> IDs;
+            IDs.append(resultIDs);
+            IDs.append(inputIDs);
+
+            plotter_->plotGraphs(IDs, names, mode, date);
         }
     }
     else
@@ -647,18 +763,18 @@ void MainWindow::updateGraphToolTip(QMouseEvent *event)
         double x = -100.0;
         if(event) x = ui->widgetPlotResults->xAxis->pixelToCoord(event->pos().x());
 
-        QModelIndexList indexes = ui->treeViewResults->selectionModel()->selectedIndexes();
         QString valueString= "";
         bool first = true;
         for(int i = 0; i < ui->widgetPlotResults->graphCount(); ++i)
         {
+            int ID = plotter_->currentPlottedIDs_[i];
+
             if(first) first = false;
             else valueString.append("\n");
 
             QCPGraph *graph = ui->widgetPlotResults->graph(i);
             double value = graph->data()->findBegin(x)->value;
 
-            int ID = indexes[2*i + 1].data().toInt();
             if(ui->radioButtonErrors->isChecked())
             {
                 if(i == 0) valueString.append("Error: ");
@@ -666,7 +782,15 @@ void MainWindow::updateGraphToolTip(QMouseEvent *event)
             }
             else if(ui->radioButtonDaily->isChecked() || ui->radioButtonMonthlyAverages->isChecked() || ui->radioButtonYearlyAverages->isChecked())
             {
-                valueString.append(treeResults_->getName(ID)).append(" (").append(treeResults_->getParentName(ID)).append("): ");
+                //TODO: instead of doing this we should just store a description with each graph in the Plotter and read that here.
+                if(ID <= maxresultID_)
+                {
+                    valueString.append(treeResults_->getName(ID)).append(" (").append(treeResults_->getParentName(ID)).append("): ");
+                }
+                else
+                {
+                    valueString.append(treeInputs_->getName(ID)).append(" (").append(treeInputs_->getParentName(ID)).append("): ");
+                }
             }
 
             bool foundrange;

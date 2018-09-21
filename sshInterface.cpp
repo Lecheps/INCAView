@@ -662,15 +662,18 @@ void SSHInterface::deleteTransactionFile(const char *filename)
 }
 
 
-bool SSHInterface::getStructureData(const char *remoteDB, const char *command, QVector<TreeData> &outdata)
+bool SSHInterface::getStructureData(const char *remoteDB, const char *table, QVector<TreeData> &outdata)
 {
     const char *tmpname = "data.dat";
 
-    bool success = runSqlHandler(command, remoteDB, tmpname);
+    QVector<QString> extracommand;
+    extracommand.push_back(QString(table));
+
+    bool success = runSqlHandler(EXPORT_STRUCTURE_COMMAND, remoteDB, tmpname, &extracommand);
 
     if(success)
     {
-        void *filedata = 0;
+        void *filedata = nullptr;
         size_t filesize;
         success = readFile(&filedata, &filesize, tmpname);
         if(success)
@@ -704,32 +707,29 @@ bool SSHInterface::getStructureData(const char *remoteDB, const char *command, Q
     return success;
 }
 
-bool SSHInterface::getResultsStructure(const char *remoteDB, QVector<TreeData> &structuredata)
-{
-    return getStructureData(remoteDB, EXPORT_RESULTS_STRUCTURE_COMMAND, structuredata);
-}
 
-
-bool SSHInterface::getResultSets(const char *remoteDB, const QVector<int>& IDs, QVector<QVector<double>> &valuedata)
+bool SSHInterface::getDataSets(const char *remoteDB, const QVector<int>& IDs, const char *table, QVector<QVector<double>> &valuedata)
 {
     const char *tmpname = "data.dat";
 
     QVector<QString> IDstrs;
+    IDstrs.push_back(QString(table));
     for(int ID : IDs)
     {
         IDstrs.push_back(QString::number(ID));
     }
 
-    bool success = runSqlHandler(EXPORT_RESULT_VALUES_COMMAND, remoteDB, tmpname, &IDstrs);
+    bool success = runSqlHandler(EXPORT_VALUES_COMMAND, remoteDB, tmpname, &IDstrs);
 
     if(success)
     {
-        void *filedata = 0;
+        void *filedata = nullptr;
         size_t filesize;
         success = readFile(&filedata, &filesize, tmpname);
         if(success)
         {
             uint8_t *data = (uint8_t *)filedata;
+
             uint64_t numresults = *(uint64_t *)data;
             data += sizeof(uint64_t);
 
@@ -737,7 +737,7 @@ bool SSHInterface::getResultSets(const char *remoteDB, const QVector<int>& IDs, 
             {
                 valuedata.resize((int)numresults);
 
-                //qDebug() << numresults;
+                qDebug() << numresults;
 
                 for(uint i = 0; i < numresults; ++i)
                 {
@@ -761,7 +761,7 @@ bool SSHInterface::getResultSets(const char *remoteDB, const QVector<int>& IDs, 
             }
             else
             {
-                emit logError(QString("SSH: SQL: Requested %1 result sets, got %2").arg((int)numresults).arg(IDs.count()));
+                emit logError(QString("SSH: SQL: Requested %1 data sets, got %2").arg(IDs.count()).arg(numresults));
                 success = false;
             }
         }
@@ -801,7 +801,7 @@ bool SSHInterface::createParameterDatabase(const char *remoteparameterfile, cons
     return success;
 }
 
-void SSHInterface::runModel(const char *exename, const char *remoteDB)
+void SSHInterface::runModel(const char *exename, const char *remoteInputFile)
 {
     if(!isInstanceConnected())
     {
@@ -809,8 +809,18 @@ void SSHInterface::runModel(const char *exename, const char *remoteDB)
         return;
     }
 
+    //NOTE results.db and inputs.db are the output database files from the model. If we have run correctly, the database output behaves strange if the databases are already there,
+    // so we delete them for now, but we should find another way to handle this eventually.
     char runcommand[512];
-    sprintf(runcommand, "rm results.db;rm inputs.db;./%s", exename); //TODO TODO TODO TODO: We should eventually not delete results.db and inputs.db, this should be handled differently
+    if(remoteInputFile)
+    {
+        sprintf(runcommand, "rm results.db;rm inputs.db;./%s run %s", exename, remoteInputFile);
+    }
+    else
+    {
+
+        sprintf(runcommand, "rm results.db;rm inputs.db;./%s", exename); //NOTE: this will make the model use the default input file that is bundled with it
+    }
 
     std::stringstream out;
     runCommand(runcommand, out, true);

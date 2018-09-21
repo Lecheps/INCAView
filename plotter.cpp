@@ -39,6 +39,8 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
 
     int64_t starttime = date.toSecsSinceEpoch();
 
+    currentPlottedIDs_ = IDs;
+
     if(mode == PlotMode_Daily || mode == PlotMode_MonthlyAverages || mode == PlotMode_YearlyAverages)
     {
         double minyrange = 0.0;

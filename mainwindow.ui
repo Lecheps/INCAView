@@ -50,6 +50,7 @@
            </sizepolicy>
           </property>
          </widget>
+         <widget class="QTreeView" name="treeViewInputs"/>
         </widget>
         <widget class="QSplitter" name="splitter_2">
          <property name="orientation">
@@ -185,8 +186,7 @@
       <item>
        <widget class="QLabel" name="labelGraphValues">
         <property name="text">
-         <string>Date:
-Values:</string>
+         <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
         </property>
        </widget>
       </item>
@@ -209,7 +209,7 @@ Values:</string>
         <item>
          <widget class="QPushButton" name="pushLoadProject">
           <property name="text">
-           <string>Load project database</string>
+           <string>Load parameter database</string>
           </property>
          </widget>
         </item>
@@ -223,7 +223,14 @@ Values:</string>
         <item>
          <widget class="QPushButton" name="pushCreateDatabase">
           <property name="text">
-           <string>Create database</string>
+           <string>Create parameter database</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="pushUploadInputs">
+          <property name="text">
+           <string>Upload input file</string>
           </property>
          </widget>
         </item>

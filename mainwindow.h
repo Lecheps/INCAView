@@ -37,6 +37,7 @@ private slots:
     void on_pushLoadProject_clicked();
     void on_pushSaveParameters_clicked();
     void on_pushCreateDatabase_clicked();
+    void on_pushUploadInputs_clicked();
     void closeEvent (QCloseEvent *);
 
     void updateParameterView(const QItemSelection &, const QItemSelection &);
@@ -63,13 +64,13 @@ private:
     void loadParameterDatabase(QString fileName);
 
     void loadParameterData();
-    void loadResultStructure(const char *remotedbpath);
+    void loadResultAndInputStructure(const char *remoteResultDb, const char *RemoteInputDb);
 
     void resetWindowTitle();
 
     Ui::MainWindow *ui;
 
-    TreeModel *treeParameters_, *treeResults_;
+    TreeModel *treeParameters_, *treeResults_, *treeInputs_;
 
     ParameterModel *parameterModel_;
     ParameterEditDelegate *lineEditDelegate;
@@ -85,6 +86,10 @@ private:
 
     SSHInterface *sshInterface_;
     SQLInterface projectDb_;
+
+    int maxresultID_ = 0;
+
+    bool inputFileWasUploaded_ = false;
 };
 
 

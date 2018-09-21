@@ -32,6 +32,8 @@ public:
     void addToCache(const QVector<int>& newIDs, const QVector<QVector<double>>& newResultsets);
     void clearCache() { cache_.clear(); }
     void clearPlots();
+
+    QVector<int> currentPlottedIDs_;
 private:
     QCustomPlot *plot_;
     QTextBrowser *resultsInfo_;

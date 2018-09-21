@@ -31,8 +31,8 @@ public:
     bool destroyInstance();
     bool isInstanceConnected();
 
-    bool getResultsStructure(const char *remoteDB, QVector<TreeData> &structuredata);
-    bool getResultSets(const char *remoteDB, const QVector<int>& IDs, QVector<QVector<double>> &valuedata);
+    bool getStructureData(const char *remoteDB, const char *table, QVector<TreeData> &outdata);
+    bool getDataSets(const char *remoteDB, const QVector<int>& IDs, const char *table, QVector<QVector<double>> &valuedata);
     bool uploadEntireFile(const char *localpath, const char *remotelocation, const char *remotefilename);
     bool downloadEntireFile(const char *localpath, const char *remotefilename);
 
@@ -40,7 +40,7 @@ public:
 
     const char * getDisconnectionMessage();
 
-    void runModel(const char *exename, const char *remoteDB);
+    void runModel(const char *exename, const char *remoteInputFile);
 
     void sendNoop();
 
@@ -73,7 +73,6 @@ private:
     bool writeFile(const void *contents, size_t contentssize, const char *remotelocation, const char *remotefilename);
     bool readFile(void **buffer, size_t *buffersize, const char *remotefilename);
     bool runSqlHandler(const char *command, const char *db, const char *tempfile, const QVector<QString> *extraParam = 0);
-    bool getStructureData(const char *remoteDB, const char *command, QVector<TreeData> &outdata);
 
     void deleteTransactionFile(const char *filename);
 

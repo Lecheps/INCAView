@@ -22,6 +22,7 @@ Stuff left to do:
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <limits>
 #include "sqlite3.h"
 
 #define __STDC_FORMAT_MACROS
@@ -35,18 +36,22 @@ typedef double f64;
 #include "serialization.h"
 
 
-bool export_results_structure(sqlite3 *db, FILE *file)
-{
-	const char *sqlcommand = "SELECT parent.ID AS parentID, child.ID, child.name, child.unit "
-							 "FROM ResultsStructure AS parent, ResultsStructure AS child "
-							 "WHERE child.lft > parent.lft "
-							 "AND child.rgt < parent.rgt "
-							 "AND child.dpt = parent.dpt + 1 "
-							 "UNION "
-							 "SELECT 0 as parentID, child.ID, child.name, child.unit "
-							 "FROM ResultsStructure as child "
-							 "WHERE child.dpt = 0 "
-							 "ORDER BY child.ID";
+bool export_structure(sqlite3 *db, FILE *file, const char *table)
+{	
+	char sqlcommand[1024];
+	sprintf(sqlcommand,
+				"SELECT parent.ID AS parentID, child.ID, child.name, child.unit "
+				"FROM %s AS parent, %s AS child "
+				"WHERE child.lft > parent.lft "
+				"AND child.rgt < parent.rgt "
+				"AND child.dpt = parent.dpt + 1 "
+				"UNION "
+				"SELECT 0 as parentID, child.ID, child.name, child.unit "
+				"FROM %s as child "
+				"WHERE child.dpt = 0 "
+				"ORDER BY child.ID",
+			table, table, table
+	);
 	
 	sqlite3_stmt *statement;
 	int rc = sqlite3_prepare_v2(db, sqlcommand, -1, &statement, 0);
@@ -76,6 +81,8 @@ bool export_results_structure(sqlite3 *db, FILE *file)
 		fwrite(&outdata, sizeof(outdata), 1, file);
 		fwrite(childName, 1, outdata.childNameLen, file);
 		if(unitName) fwrite(unitName, 1, outdata.unitLen, file);
+		
+		//fprintf(stdout, "%u %u %u %u %s %s\n", outdata.parentID, outdata.childID, outdata.childNameLen, outdata.unitLen, childName, unitName);
 	}
 	
 	sqlite3_finalize(statement);
@@ -83,34 +90,7 @@ bool export_results_structure(sqlite3 *db, FILE *file)
 	return true;
 }
 
-struct export_result_values_callback_data
-{
-	FILE *outfile;
-	u64 count;
-};
-
-static int export_result_values_callback(void *data, int argc, char **argv, char **colname)
-{
-	export_result_values_callback_data *outdata = (export_result_values_callback_data *)data;
-	++outdata->count;
-	
-	f64 value;
-	int num = sscanf(argv[0], "%lf", &value);
-	if(num != 1) value = 0.0;
-	
-	size_t count = fwrite(&value, sizeof(f64), 1, outdata->outfile);
-	assert(count == 1);
-	return 0;
-}
-
-static int export_result_values_count_callback(void *data, int argc, char **argv, char **colname)
-{
-	u64 *count = (u64 *)data;
-	*count = (u64)atoi(argv[0]); //TODO: Do we need to support larger numbers than what is handled by atoi?
-	return 0;
-}
-
-static bool export_result_values(sqlite3 *db, u32 numrequests, u32* requested_ids, FILE *file)
+static bool export_values(sqlite3 *db, u32 numrequests, u32* requested_ids, FILE *file, const char *table)
 {
 	u64 numrequests64 = (u64)numrequests;
 	fwrite(&numrequests64, sizeof(u64), 1, file);
@@ -118,35 +98,61 @@ static bool export_result_values(sqlite3 *db, u32 numrequests, u32* requested_id
 	for(u32 i = 0; i < numrequests; ++i)
 	{
 		char sqlcount[256];
-		sprintf(sqlcount, "SELECT count(*) FROM Results WHERE ID=%d;", requested_ids[i]);
-		char *errmsg = 0;
-		u64 count;
-		int rc = sqlite3_exec(db, sqlcount, export_result_values_count_callback, (void *)&count, &errmsg);
+		sprintf(sqlcount, "SELECT count(*) FROM %s WHERE ID=%d;", table, requested_ids[i]);
+		
+		sqlite3_stmt *statement;
+		int rc = sqlite3_prepare_v2(db, sqlcount, -1, &statement, 0);
 		if( rc != SQLITE_OK )
 		{
-			fprintf(stdout, "ERROR: SQL error: %s\n", errmsg);
-			sqlite3_free(errmsg);
-			fclose(file);
+			fprintf(stdout, "ERROR: SQL error: %s\n", sqlite3_errmsg(db));
 			return false;
 		}
+		
+		u64 count;
+		
+		rc = sqlite3_step(statement);
+		if(rc == SQLITE_ERROR)
+		{
+			fprintf(stdout, "ERROR: SQL error: %s\n", sqlite3_errmsg(db));
+			return false;
+		}
+		
+		count = (u64)sqlite3_column_int(statement, 0);
 		fwrite(&count, sizeof(u64), 1, file);
 		
+		sqlite3_finalize(statement);
+		
 		char sqlcommand[256];
-		sprintf(sqlcommand, "SELECT value FROM Results WHERE ID=%d;", requested_ids[i]);
+		sprintf(sqlcommand, "SELECT value FROM %s WHERE ID=%d;", table, requested_ids[i]);
 		
-		export_result_values_callback_data outdata;
-		outdata.outfile = file;
-		outdata.count = 0;
-		rc = sqlite3_exec(db, sqlcommand, export_result_values_callback, (void *)&outdata, &errmsg);
-		
+		rc = sqlite3_prepare_v2(db, sqlcommand, -1, &statement, 0);
 		if( rc != SQLITE_OK )
 		{
-			fprintf(stdout, "ERROR: SQL error: %s\n", errmsg);
-			sqlite3_free(errmsg);
-			fclose(file);
+			fprintf(stdout, "ERROR: SQL error: %s\n", sqlite3_errmsg(db));
 			return false;
 		}
-		assert(count == outdata.count);
+		
+		while((rc = sqlite3_step(statement)) != SQLITE_DONE)
+		{
+			if(rc == SQLITE_ERROR)
+			{
+				fprintf(stdout, "ERROR: SQL error: %s\n", sqlite3_errmsg(db));
+				return false;
+			}
+			
+			double value;
+			if(sqlite3_column_type(statement, 0) == SQLITE_NULL)
+			{
+				value = std::numeric_limits<double>::quiet_NaN();
+			}
+			else
+			{
+				value = sqlite3_column_double(statement, 0);
+			}
+			fwrite(&value, sizeof(double), 1, file);
+		}
+		
+		sqlite3_finalize(statement);
 	}
 	
 	return true;
@@ -157,10 +163,13 @@ int main(int argc, char *argv[])
 {
 	assert(sizeof(f64)==8);
 		
-	if(argc > 3)
+	if(argc >= 5)
 	{
-		char *dbname = argv[2];
-		char *filename = argv[3];
+		//NOTE: exename is argv[0];
+		const char *command  = argv[1];
+		const char *dbname   = argv[2];
+		const char *filename = argv[3];
+		const char *table    = argv[4];
 		sqlite3 *db;
 		FILE *file = fopen(filename, "w");
 
@@ -180,28 +189,28 @@ int main(int argc, char *argv[])
 
 		bool success = false;
 		
-		if(strcmp(argv[1], EXPORT_RESULT_VALUES_COMMAND) == 0)
+		if(strcmp(command, EXPORT_VALUES_COMMAND) == 0)
 		{
-			u32 numrequests = argc - 4;
+			u32 numrequests = argc - 5;
 			if(numrequests > 0)
 			{
 				u32 *requested_ids = (u32 *)malloc(numrequests*sizeof(u32));
 				for(u32 i = 0; i < numrequests; ++i)
 				{	
-					u32 ID = (u32)atoi(argv[4+i]);
+					u32 ID = (u32)atoi(argv[5+i]);
 					//TODO: check if format was correct
 					requested_ids[i] = ID;
 				}
-				success = export_result_values(db, numrequests, requested_ids, file);
+				success = export_values(db, numrequests, requested_ids, file, table);
 				
 				free(requested_ids);
 				
 				//test_result_values_file(filename);
 			}
 		}
-		else if(strcmp(argv[1], EXPORT_RESULTS_STRUCTURE_COMMAND) == 0)
+		else if(strcmp(command, EXPORT_STRUCTURE_COMMAND) == 0)
 		{
-			success = export_results_structure(db, file);
+			success = export_structure(db, file, table);
 		}
 		else
 		{
