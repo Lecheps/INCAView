@@ -697,14 +697,17 @@ void MainWindow::updateGraphsAndResultSummary()
         QVector<int> uncachedResultIDs;
         plotter_->filterUncachedIDs(resultIDs, uncachedResultIDs);
 
+        int64_t startdate;
+        bool setStartDate = false;
+
         bool success = true;
         if(!uncachedResultIDs.empty())
         {
             //TODO: Formalize the paths to the remote databases in some way so that they are not just scattered around in the code.
             const char *remoteResultDbPath = "results.db";
             QVector<QVector<double>> resultsets;
-            success = sshInterface_->getDataSets(remoteResultDbPath, uncachedResultIDs, "Results", resultsets);
-            plotter_->addToCache(uncachedResultIDs, resultsets);
+            success = sshInterface_->getDataSets(remoteResultDbPath, uncachedResultIDs, "Results", resultsets, startdate);
+            plotter_->addToCache(uncachedResultIDs, resultsets, startdate);
         }
 
         QVector<int> uncachedInputIDs;
@@ -717,12 +720,15 @@ void MainWindow::updateGraphsAndResultSummary()
             //TODO: Formalize the paths to the remote databases in some way so that they are not just scattered around in the code.
             const char *remoteInputDbPath = "inputs.db";
             QVector<QVector<double>> inputsets;
-            success = sshInterface_->getDataSets(remoteInputDbPath, uncachedInputIDs, "Inputs", inputsets);
+            success = sshInterface_->getDataSets(remoteInputDbPath, uncachedInputIDs, "Inputs", inputsets, startdate);
 
             for(int &ID : uncachedInputIDs) ID += maxresultID_; //NOTE: map them back AGAIN because we now talk to the internal system.
 
-            plotter_->addToCache(uncachedInputIDs, inputsets);
+            plotter_->addToCache(uncachedInputIDs, inputsets, startdate);
         }
+
+        //NOTE: For now we don't have a individual start date for each time series. Instead, we just get one. And we assume that the start date for the result data
+        // is the same as the one for the input data. That is how the models work currently too (as of 24.09.2018).
 
         if(success)
         {
@@ -734,13 +740,13 @@ void MainWindow::updateGraphsAndResultSummary()
             else if(ui->radioButtonErrorNormalProbability->isChecked()) mode = PlotMode_ErrorNormalProbability;
 
            //TODO: Using the currentDateTime is temporary. Instead we should load the dates from the database
-            QDateTime date = QDateTime::currentDateTime();
+            //QDateTime date = QDateTime::currentDateTime();
 
             QVector<int> IDs;
             IDs.append(resultIDs);
             IDs.append(inputIDs);
 
-            plotter_->plotGraphs(IDs, names, mode, date);
+            plotter_->plotGraphs(IDs, names, mode);
         }
     }
     else

@@ -53,7 +53,7 @@ void ParameterEditDelegate::setModelData(QWidget *editor, QAbstractItemModel *mo
     if(par->type == parametertype_ptime)
     {
         QDateEdit *dateEdit = static_cast<QDateEdit*>(editor);
-        int64_t intVal = QDateTime(dateEdit->date()).toSecsSinceEpoch();
+        int64_t intVal = QDateTime(dateEdit->date(), QTime(), Qt::OffsetFromUTC, 0).toSecsSinceEpoch();
         model->setData(index, QVariant((qlonglong)intVal), Qt::EditRole);
     }
     else

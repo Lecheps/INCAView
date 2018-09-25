@@ -14,13 +14,15 @@ void Plotter::filterUncachedIDs(const QVector<int>& IDs, QVector<int>& uncachedO
     }
 }
 
-void Plotter::addToCache(const QVector<int>& newIDs, const QVector<QVector<double>>& newResultsets)
+void Plotter::addToCache(const QVector<int>& newIDs, const QVector<QVector<double>>& newResultsets, int64_t startDate)
 {
     for(int i = 0; i < newResultsets.count(); ++i)
     {
         int ID = newIDs[i];
         cache_[ID] = newResultsets[i]; //NOTE: Vector copy
     }
+
+    startDate_ = startDate;
 }
 
 void Plotter::clearPlots()
@@ -30,14 +32,12 @@ void Plotter::clearPlots()
     resultsInfo_->clear();
 }
 
-void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& resultnames, PlotMode mode, QDateTime date)
+void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& resultnames, PlotMode mode)
 {
     //NOTE: Right now we just throw out all previous graphs and re-create everything. We could keep track of which ID corresponds to which graph (in which plot mode)
     // and then only update/create the graphs that have changed. However, this should only be necessary if this routine runs very slowly on some user machines.
     plot_->clearPlottables();
     resultsInfo_->clear();
-
-    int64_t starttime = date.toSecsSinceEpoch();
 
     currentPlottedIDs_ = IDs;
 
@@ -101,12 +101,13 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
 
                 if(mode == PlotMode_YearlyAverages)
                 {
-                    QDateTime workingdate = date;
+                    QDateTime workingdate = QDateTime::fromSecsSinceEpoch(startDate_, Qt::OffsetFromUTC, 0);
                     QVector<double> displayedx, displayedy;
                     min = std::numeric_limits<double>::max();
                     max = std::numeric_limits<double>::min();
 
                     int prevyear = workingdate.date().year();
+
                     double sum = 0;
                     int dayscnt = 0;
                     for(int j = 0; j < cnt; ++j)
@@ -118,7 +119,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                         {
                             double value = sum / (double) dayscnt;
                             displayedy.push_back(value);
-                            displayedx.push_back(QDateTime(QDate(prevyear, 1, 1)).toSecsSinceEpoch());
+                            displayedx.push_back(QDateTime(QDate(prevyear, 1, 1), QTime(), Qt::OffsetFromUTC, 0).toSecsSinceEpoch());
                             min = std::min(min, value);
                             max = std::max(max, value);
 
@@ -140,9 +141,10 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                     min = std::numeric_limits<double>::max();
                     max = std::numeric_limits<double>::min();
 
-                    QDateTime workingdate = date;
+                    QDateTime workingdate = QDateTime::fromSecsSinceEpoch(startDate_, Qt::OffsetFromUTC, 0);
                     int prevmonth = workingdate.date().month();
                     int prevyear = workingdate.date().year();
+
                     double sum = 0;
                     int dayscnt = 0;
                     for(int j = 0; j < cnt; ++j)
@@ -154,7 +156,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                         {
                             double value = sum / (double) dayscnt;
                             displayedy.push_back(value);
-                            displayedx.push_back(QDateTime(QDate(prevyear, prevmonth, 1)).toSecsSinceEpoch());
+                            displayedx.push_back(QDateTime(QDate(prevyear, prevmonth, 1), QTime(), Qt::OffsetFromUTC, 0).toSecsSinceEpoch());
                             min = std::min(min, value);
                             max = std::max(max, value);
 
@@ -177,7 +179,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                     for(int j = 0; j < cnt; ++j)
                     {
                         double value = yval[j];
-                        displayedx[j] = (double)(starttime + 24*3600*j);
+                        displayedx[j] = (double)(startDate_ + 24*3600*j);
                         min = std::min(min, value);
                         max = std::max(max, value);
                     }
@@ -208,10 +210,11 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
             int ID0 = IDs[0];
             int ID1 = IDs[1];
 
-            const QVector<double>& observed = cache_[ID0];
-            const QVector<double>& modeled = cache_[ID1];
-            QString observedName = resultnames[0];
-            QString modeledName = resultnames[1];
+            const QVector<double>& modeled = cache_[ID0];
+            const QVector<double>& observed = cache_[ID1];
+
+            QString modeledName = resultnames[0];
+            QString observedName = resultnames[1];
 
             if(observed.empty() || modeled.empty()) return;
 
@@ -227,7 +230,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
 
             for(int i = 0; i < count; ++i)
             {
-                xval[i] = (double)(starttime + 24*3600*i);
+                xval[i] = (double)(startDate_ + 24*3600*i);
                 meanobserved += observed[i];
                 meanx += xval[i];
             }

@@ -95,13 +95,36 @@ static bool export_values(sqlite3 *db, u32 numrequests, u32* requested_ids, FILE
 	u64 numrequests64 = (u64)numrequests;
 	fwrite(&numrequests64, sizeof(u64), 1, file);
 	
+	//NOTE: Write out the start date of the dataset only
+	//NOTE: This is kind of a hack since it is only useful if the recipient knows the timestep. Also will not work if different timeseries have different start dates, 
+	// but at least for now that is not allowed.
+	char sqldate[256];
+	sprintf(sqldate, "SELECT date from %s WHERE ID=%d LIMIT 1", table, requested_ids[0]);
+	sqlite3_stmt *statement;
+	int rc = sqlite3_prepare_v2(db, sqldate, -1, &statement, 0);
+	if( rc != SQLITE_OK )
+	{
+		fprintf(stdout, "ERROR: SQL error: %s\n", sqlite3_errmsg(db));
+		return false;
+	}
+	rc = sqlite3_step(statement);
+	if(rc == SQLITE_ERROR)
+	{
+		fprintf(stdout, "ERROR: SQL error: %s\n", sqlite3_errmsg(db));
+		return false;
+	}
+	s64 date = sqlite3_column_int64(statement, 0);
+	
+	fwrite(&date, sizeof(s64), 1, file);
+	
+	sqlite3_finalize(statement);
+	
 	for(u32 i = 0; i < numrequests; ++i)
 	{
 		char sqlcount[256];
 		sprintf(sqlcount, "SELECT count(*) FROM %s WHERE ID=%d;", table, requested_ids[i]);
 		
-		sqlite3_stmt *statement;
-		int rc = sqlite3_prepare_v2(db, sqlcount, -1, &statement, 0);
+		rc = sqlite3_prepare_v2(db, sqlcount, -1, &statement, 0);
 		if( rc != SQLITE_OK )
 		{
 			fprintf(stdout, "ERROR: SQL error: %s\n", sqlite3_errmsg(db));

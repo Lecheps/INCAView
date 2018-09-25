@@ -27,9 +27,9 @@ public:
 
 
     void filterUncachedIDs(const QVector<int>& IDs, QVector<int>& uncachedOut);
-    void plotGraphs(const QVector<int>& IDs, const QVector<QString>& resultnames, PlotMode mode, QDateTime date);
+    void plotGraphs(const QVector<int>& IDs, const QVector<QString>& resultnames, PlotMode mode);
 
-    void addToCache(const QVector<int>& newIDs, const QVector<QVector<double>>& newResultsets);
+    void addToCache(const QVector<int>& newIDs, const QVector<QVector<double>>& newResultsets, int64_t startDate);
     void clearCache() { cache_.clear(); }
     void clearPlots();
 
@@ -41,6 +41,7 @@ private:
     QVector<QColor> graphColors_;
 
     std::unordered_map<int, QVector<double>> cache_;
+    int64_t startDate_; //NOTE: For now we only have a single start date for all the plots and assume daily values. This should probably be improved eventually.
 };
 
 #endif // PLOTTER_H

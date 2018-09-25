@@ -708,7 +708,7 @@ bool SSHInterface::getStructureData(const char *remoteDB, const char *table, QVe
 }
 
 
-bool SSHInterface::getDataSets(const char *remoteDB, const QVector<int>& IDs, const char *table, QVector<QVector<double>> &valuedata)
+bool SSHInterface::getDataSets(const char *remoteDB, const QVector<int>& IDs, const char *table, QVector<QVector<double>> &valuedata, int64_t &date)
 {
     const char *tmpname = "data.dat";
 
@@ -732,6 +732,8 @@ bool SSHInterface::getDataSets(const char *remoteDB, const QVector<int>& IDs, co
 
             uint64_t numresults = *(uint64_t *)data;
             data += sizeof(uint64_t);
+            date = *(int64_t *)data;
+            data += sizeof(int64_t);
 
             if((int)numresults == IDs.count())
             {

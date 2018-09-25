@@ -139,7 +139,7 @@ QString Parameter::getValueDisplayString(parameter_value value, parameter_type t
 
 QDate Parameter::valueAsQDate(parameter_value value)
 {
-    return QDateTime::fromSecsSinceEpoch(value.val_ptime).date();
+    return QDateTime::fromSecsSinceEpoch(value.val_ptime, Qt::OffsetFromUTC).date();
 }
 
 void Parameter::clipTimeValue(parameter_value &value)
