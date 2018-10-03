@@ -228,6 +228,9 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
             double meanobserved = 0.0;
             double meanx = 0.0;
 
+            //TODO: We should expect the observed series to have potential NaN values (missing data)..
+            // That should be handled properly.
+
             for(int i = 0; i < count; ++i)
             {
                 xval[i] = (double)(startDate_ + 24*3600*i);

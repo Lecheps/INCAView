@@ -241,6 +241,9 @@ bool SSHInterface::createInstance(const char *username, const char *instancename
         return false;
     }
 
+    std::stringstream out;
+    runCommand("export PATH=$PATH:/home/magnus:/home/magnus/incaview", out, false); //our exe files are in these locations.
+
     loggedInToInstance_ = true;
     instanceExists_ = true;
 
@@ -332,12 +335,12 @@ bool SSHInterface::connectSession(const char *user, const char *address, const c
     //NOTE: This registers the server as a known host on the local user computer. It should be ok to do this without any further checks since we only connect INCAView to servers we own?
     ssh_write_knownhost(session_);
 
-    rc = ssh_userauth_privatekey_file(session_, 0, keyfile, 0);
+    rc = ssh_userauth_privatekey_file(session_, nullptr, keyfile, nullptr);
     if(rc != SSH_AUTH_SUCCESS)
     {
         emit logError(QString("SSH: Failed to authenticate user: %1").arg(ssh_get_error(session_)));
         ssh_free(session_);
-        session_ = 0;
+        session_ = nullptr;
         return false;
     }
 
@@ -350,7 +353,7 @@ void SSHInterface::disconnectSession()
     {
         ssh_disconnect(session_);
         ssh_free(session_);
-        session_ = 0;
+        session_ = nullptr;
     }
 }
 
@@ -413,10 +416,8 @@ bool SSHInterface::runCommand(const char *command, std::stringstream &out, bool 
            {
                emit log(QString(readData));
            }
-           else
-           {
-               out << readData;
-           }
+
+           out << readData;
         }
 
         QThread::msleep(50); //TODO: We should check that this actually does what we want.
@@ -568,7 +569,7 @@ bool SSHInterface::uploadEntireFile(const char *localpath, const char *remoteloc
     size_t size = (size_t)file.tellg();
     file.seekg(0, std::ios::beg);
 
-    qDebug() << "size of file was " << size;
+    //qDebug() << "size of file was " << size;
 
     std::vector<char> buffer;
     buffer.resize(size);
@@ -627,7 +628,8 @@ bool startsWith(const char *pre, const char *str)
 bool SSHInterface::runSqlHandler(const char *command, const char *db, const char *tempfile, const QVector<QString> *extraParam)
 {
     char commandbuf[512];
-    int len = sprintf(commandbuf, "./incaview/sqlhandler %s %s %s", command, db, tempfile);
+    //int len = sprintf(commandbuf, "./incaview/sqlhandler %s %s %s", command, db, tempfile);
+    int len = sprintf(commandbuf, "/home/magnus/incaview/sqlhandler %s %s %s", command, db, tempfile);
     if(extraParam)
     {
         for(const QString &par : *extraParam)
@@ -678,7 +680,7 @@ bool SSHInterface::getStructureData(const char *remoteDB, const char *table, QVe
         success = readFile(&filedata, &filesize, tmpname);
         if(success)
         {
-            qDebug() << "File size: " << filesize;
+            //qDebug() << "File size: " << filesize;
 
             uint8_t *at = (uint8_t *)filedata;
             while(at < (uint8_t *)filedata + filesize)
@@ -694,7 +696,7 @@ bool SSHInterface::getStructureData(const char *remoteDB, const char *table, QVe
                 std::string unitstr((char *)at, (char *)at + entry->unitLen);
                 at += entry->unitLen;
 
-                qDebug() << "parentid: " << parentID << "childid: " << childID << "name: " << namestr.data() << "unit: " << unitstr.data();
+                //qDebug() << "parentid: " << parentID << "childid: " << childID << "name: " << namestr.data() << "unit: " << unitstr.data();
 
                 outdata.push_back({childID, parentID, QString::fromStdString(namestr), QString::fromStdString(unitstr)});
             }
@@ -737,16 +739,16 @@ bool SSHInterface::getDataSets(const char *remoteDB, const QVector<int>& IDs, co
 
             if((int)numresults == IDs.count())
             {
-                valuedata.resize((int)numresults);
+                valuedata.resize(numresults);
 
-                qDebug() << numresults;
+                //qDebug() << numresults;
 
                 for(uint i = 0; i < numresults; ++i)
                 {
                     //TODO: Check that we never overstep the filesize;
                     uint64_t count = *(uint64_t *)data;
                     data += sizeof(uint64_t);
-                    int cnt = (int)count;
+                    size_t cnt = (int)count;
 
                     //qDebug() << cnt;
 
@@ -789,12 +791,13 @@ bool SSHInterface::createParameterDatabase(const char *remoteparameterfile, cons
 
     //NOTE: We delete the existing parameter database. This is only necessary because the exe does not delete it when trying to overwrite (i think).
     // will probably be fixed later.
-    sprintf(command, "rm parameters.db;./%s create_parameter_database %s", remoteexename, remoteparameterfile);
+    //sprintf(command, "rm parameters.db;./%s create_parameter_database %s", remoteexename, remoteparameterfile);
+    sprintf(command, "rm parameters.db;/home/magnus%s create_parameter_database %s", remoteexename, remoteparameterfile);
 
     //qDebug() << command;
 
     std::stringstream output;
-    bool success = runCommand(command, output);
+    bool success = runCommand(command, output, true);
 
     //qDebug() << output.str().data();
 
@@ -816,12 +819,15 @@ void SSHInterface::runModel(const char *exename, const char *remoteInputFile)
     char runcommand[512];
     if(remoteInputFile)
     {
-        sprintf(runcommand, "rm results.db;rm inputs.db;./%s run %s", exename, remoteInputFile);
+        sprintf(runcommand, "rm results.db;rm inputs.db;/home/magnus/%s run %s", exename, remoteInputFile);
+        //sprintf(runcommand, "rm results.db;rm inputs.db;%s run %s", exename, remoteInputFile);
     }
     else
     {
-
-        sprintf(runcommand, "rm results.db;rm inputs.db;./%s", exename); //NOTE: this will make the model use the default input file that is bundled with it
+        //NOTE: this will make the model use the default input file that is bundled with it
+        //Oops, only works when logged in as magnus since that is where the default input file is.
+        sprintf(runcommand, "rm results.db;rm inputs.db;./%s", exename);
+        //sprintf(runcommand, "rm results.db;rm inputs.db;%s", exename);
     }
 
     std::stringstream out;

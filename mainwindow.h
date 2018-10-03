@@ -57,16 +57,20 @@ private slots:
     void logSSHError(const QString&);
 
 private:
-    void toggleParametersHaveBeenEditedSinceLastSave(bool);
+    void setParametersHaveBeenEditedSinceLastSave(bool);
     void runModel();
     void setWeExpectToBeConnected(bool);
 
     void loadParameterDatabase(QString fileName);
 
+    bool getDataSets(const char *dbname, const QVector<int> &IDs, const char *table, QVector<QVector<double>> &seriesout, int64_t &startdateout);
+
     void loadParameterData();
     void loadResultAndInputStructure(const char *remoteResultDb, const char *RemoteInputDb);
 
     void resetWindowTitle();
+
+    void updateRunButtonState();
 
     Ui::MainWindow *ui;
 
@@ -82,14 +86,18 @@ private:
 
     QVector<ParameterEditAction> editUndoStack_;
 
-    QString selectedProjectDbPath_;
+    QString selectedParameterDbPath_;
+    bool parameterDbWasSelected_ = false;
+    QDir projectDirectory_;
 
     SSHInterface *sshInterface_;
     SQLInterface projectDb_;
 
     int maxresultID_ = 0;
 
+    bool inputFileWasSelected_ = false;
     bool inputFileWasUploaded_ = false;
+    QString selectedInputFilePath_;
 };
 
 

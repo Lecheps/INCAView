@@ -230,7 +230,7 @@
         <item>
          <widget class="QPushButton" name="pushUploadInputs">
           <property name="text">
-           <string>Upload input file</string>
+           <string>Select input file</string>
           </property>
          </widget>
         </item>

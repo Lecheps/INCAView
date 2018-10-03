@@ -3,6 +3,7 @@
 #include <functional>
 #include "sshInterface.h"
 #include "sqlhandler/serialization.h"
+#include <fstream>
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -10,7 +11,19 @@ MainWindow::MainWindow(QWidget *parent) :
 {
     ui->setupUi(this);
 
-    ui->lineEditUsername->setText("magnus"); //TODO: last login name should maybe be stored in a file. It should at least not be hard coded to "magnus"
+    std::ifstream usernamefile;
+    usernamefile.open("lastusername.txt");
+    if(usernamefile)
+    {
+        std::string username;
+        usernamefile >> username;
+        ui->lineEditUsername->setText(QString::fromStdString(username));
+        usernamefile.close();
+    }
+    else
+    {
+        ui->lineEditUsername->setText("username");
+    }
 
     treeParameters_ = nullptr;
     treeResults_ = nullptr;
@@ -35,8 +48,8 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->tableViewParameters->setEditTriggers(QAbstractItemView::AllEditTriggers);
 
     ui->pushSaveParameters->setEnabled(false);
-    ui->pushCreateDatabase->setEnabled(false);
-    ui->pushUploadInputs->setEnabled(false);
+    //ui->pushCreateDatabase->setEnabled(false);
+    //ui->pushUploadInputs->setEnabled(false);
 
     ui->treeViewResults->setSelectionMode(QTreeView::ExtendedSelection); // Allows to ctrl-select multiple items.
     ui->treeViewInputs->setSelectionMode(QTreeView::ExtendedSelection); // Allows to ctrl-select multiple items.
@@ -71,7 +84,6 @@ MainWindow::MainWindow(QWidget *parent) :
     QObject::connect(sshInterface_, &SSHInterface::logError, this, &MainWindow::logSSHError);
 
     plotter_ = new Plotter(ui->widgetPlotResults, ui->textResultsInfo);
-
 
 }
 
@@ -115,7 +127,7 @@ void MainWindow::logSSHError(const QString& message)
 
 void MainWindow::resetWindowTitle()
 {
-    QString dbState = selectedProjectDbPath_;
+    QString dbState = selectedParameterDbPath_;
     if(parametersHaveBeenEditedSinceLastSave_) dbState = "*" + dbState;
 
     QString loginState = "";
@@ -135,6 +147,13 @@ void MainWindow::on_pushConnect_clicked()
     ui->lineEditUsername->setEnabled(false);
 
     QByteArray username = ui->lineEditUsername->text().toLatin1();
+    std::ofstream usernamefile;
+    usernamefile.open("lastusername.txt");
+    if(usernamefile)
+    {
+        usernamefile.write(username.data(), username.size());
+        usernamefile.close();
+    }
 
     //TODO: Check that username is a single word in lower caps or with '-'. If that is not always possible, we should generate the instance name in a different way
 
@@ -174,7 +193,7 @@ void MainWindow::on_pushLoadProject_clicked()
 
 void MainWindow::loadParameterDatabase(QString fileName)
 {
-    if(projectDb_.databaseIsSet())
+    if(parameterDbWasSelected_)
     {
         if(parametersHaveBeenEditedSinceLastSave_)
         {
@@ -196,18 +215,19 @@ void MainWindow::loadParameterDatabase(QString fileName)
     bool success = projectDb_.setDatabase(fileName);
     if(success)
     {
-        loadParameterData();
+        parameterDbWasSelected_ = true;
+        selectedParameterDbPath_ = fileName;
 
-        selectedProjectDbPath_ = fileName;
+        loadParameterData();
 
         ui->treeViewParameters->expandToDepth(3);
         ui->treeViewParameters->resizeColumnToContents(0);
         ui->treeViewParameters->setColumnHidden(1, true);
         ui->treeViewParameters->setColumnHidden(2, true);
 
-        if(sshInterface_->isInstanceConnected()) ui->pushRun->setEnabled(true);
+        updateRunButtonState();
 
-        toggleParametersHaveBeenEditedSinceLastSave(false);
+        setParametersHaveBeenEditedSinceLastSave(false);
 
         resetWindowTitle();
     }
@@ -273,28 +293,33 @@ void MainWindow::on_pushCreateDatabase_clicked()
 
 void MainWindow::on_pushUploadInputs_clicked()
 {
-    if(!weExpectToBeConnected_)
+
+    selectedInputFilePath_ = QFileDialog::getOpenFileName(this,
+                tr("Select input file"), "", tr("Data files (*.dat)"));  //TODO: should not restrict it to .dat
+
+    if(selectedInputFilePath_.isEmpty() || selectedInputFilePath_.isNull()) //NOTE: In case the user clicked cancel etc.
     {
-        //NOTE: This should not be possible. The button should not be active in that case.
         return;
     }
+
+    inputFileWasSelected_ = true;
+    updateRunButtonState();
+
+    if(!weExpectToBeConnected_)
+    {
+
+        return;
+    }
+
     if(!sshInterface_->isInstanceConnected())
     {
         handleInvoluntarySSHDisconnect();
         return;
     }
 
-    QString fileName = QFileDialog::getOpenFileName(this,
-        tr("Select input file to upload"), "", tr("Data files (*.dat)"));  //TODO: should not restrict it to .dat
-
-    if(fileName.isEmpty() || fileName.isNull()) //NOTE: In case the user clicked cancel etc.
-    {
-        return;
-    }
-
     const char *remoteInputFileName = "uploadedinputs.dat";
 
-    QByteArray filename2 = fileName.toLatin1();
+    QByteArray filename2 = selectedInputFilePath_.toLatin1();
     bool success = sshInterface_->uploadEntireFile(filename2.data(), "~/", remoteInputFileName);
 
     if(success) inputFileWasUploaded_ = true;
@@ -302,8 +327,10 @@ void MainWindow::on_pushUploadInputs_clicked()
 
 void MainWindow::loadParameterData()
 {
-    if(projectDb_.databaseIsSet())
+    if(parameterDbWasSelected_)
     {
+        projectDb_.setDatabase(selectedParameterDbPath_);
+
         log("Loading parameter structure...");
 
         parameterModel_ = new ParameterModel();
@@ -345,13 +372,28 @@ void MainWindow::loadParameterData()
     }
 }
 
-void MainWindow::loadResultAndInputStructure(const char *remoteResultDb, const char *RemoteInputDb)
+void MainWindow::loadResultAndInputStructure(const char *ResultDb, const char *InputDb)
 {
-    QVector<TreeData> resultstreedata;
-    bool success = sshInterface_->getStructureData(remoteResultDb, "ResultsStructure", resultstreedata);
+    log("Loading result and input structure.");
 
+    bool success = false;
+    QVector<TreeData> resultstreedata;
     QVector<TreeData> inputtreedata;
-    success = success && sshInterface_->getStructureData(RemoteInputDb, "InputsStructure", inputtreedata);
+    if(weExpectToBeConnected_)
+    {
+        success = sshInterface_->getStructureData(ResultDb, "ResultsStructure", resultstreedata);
+        success = success && sshInterface_->getStructureData(InputDb, "InputsStructure", inputtreedata);
+    }
+    else
+    {
+        QString resultdbpath = projectDirectory_.absoluteFilePath(ResultDb);
+        projectDb_.setDatabase(resultdbpath);
+        success = projectDb_.getResultOrInputStructure(resultstreedata, "ResultsStructure");
+
+        QString inputdbpath = projectDirectory_.absoluteFilePath(InputDb);
+        projectDb_.setDatabase(inputdbpath);
+        success = success && projectDb_.getResultOrInputStructure(inputtreedata, "InputsStructure");
+    }
 
     if(!success) return;
 
@@ -388,8 +430,6 @@ void MainWindow::loadResultAndInputStructure(const char *remoteResultDb, const c
 
     QObject::connect(ui->treeViewInputs->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateGraphsAndResultSummary);
 
-    qDebug() << "blablabla";
-
     //TODO: The following should be done somewhere else?
 
     ui->radioButtonDaily->setEnabled(true);
@@ -408,20 +448,33 @@ void MainWindow::loadResultAndInputStructure(const char *remoteResultDb, const c
     ui->treeViewInputs->resizeColumnToContents(0);
     ui->treeViewInputs->setColumnHidden(1, true);
     ui->treeViewInputs->setColumnHidden(2, true);
+
+    log("Loading complete.");
+}
+
+void MainWindow::updateRunButtonState()
+{
+    if(//weExpectToBeConnected_ &&
+       parameterDbWasSelected_ &&
+       inputFileWasSelected_
+      )
+    {
+        ui->pushRun->setEnabled(true);
+    }
 }
 
 void MainWindow::setWeExpectToBeConnected(bool connected)
 {
     weExpectToBeConnected_ = connected;
 
+    //updateRunButtonState();
+
     if(connected)
     {
         ui->pushConnect->setEnabled(false);
         ui->lineEditUsername->setEnabled(false);
         ui->pushDisconnect->setEnabled(true);
-        if(projectDb_.databaseIsSet()) ui->pushRun->setEnabled(true);
         ui->pushCreateDatabase->setEnabled(true);
-        ui->pushUploadInputs->setEnabled(true);
     }
     else
     {
@@ -430,7 +483,6 @@ void MainWindow::setWeExpectToBeConnected(bool connected)
         ui->pushDisconnect->setEnabled(false);
         ui->pushRun->setEnabled(false);
         ui->pushCreateDatabase->setEnabled(false);
-        ui->pushUploadInputs->setEnabled(false);
         ui->radioButtonDaily->setEnabled(false);
         ui->radioButtonMonthlyAverages->setEnabled(false);
         ui->radioButtonYearlyAverages->setEnabled(false);
@@ -490,10 +542,11 @@ void MainWindow::on_pushSaveParameters_clicked()
         //TODO: we should probably only save the parameters that have been changed instead of all of them.. However this operation is very fast, so it doesn't seem to matter.
         parameterModel_->serializeParameterData(parameterdata);
 
+        projectDb_.setDatabase(selectedParameterDbPath_);
         bool success = projectDb_.writeParameterValues(parameterdata);
         if(success)
         {
-            toggleParametersHaveBeenEditedSinceLastSave(false);
+            setParametersHaveBeenEditedSinceLastSave(false);
 
             editUndoStack_.clear();
 
@@ -505,43 +558,52 @@ void MainWindow::on_pushSaveParameters_clicked()
 
 void MainWindow::on_pushRun_clicked()
 {
-    if(weExpectToBeConnected_) //NOTE: The button should also be disabled in this case. This check is just for safety
+    if(parameterModel_->areAllParametersInRange())
     {
-        if(sshInterface_->isInstanceConnected())
-        {
-            if(parameterModel_->areAllParametersInRange())
-            {
-                runModel();
-            }
-            else
-            {
-                QMessageBox msgBox(QMessageBox::Warning, tr("Invalid parameters"), tr("Not all parameter values are in the [Min, Max] range. This may cause the model to crash. Run the model anyway?"));
-                QPushButton *runButton = msgBox.addButton(tr("Run model"), QMessageBox::ActionRole);
-                QPushButton *abortButton = msgBox.addButton(QMessageBox::Cancel);
+        runModel();
+    }
+    else
+    {
+        QMessageBox msgBox(QMessageBox::Warning, tr("Invalid parameters"), tr("Not all parameter values are in the [Min, Max] range. This may cause the model to crash. Run the model anyway?"));
+        QPushButton *runButton = msgBox.addButton(tr("Run model"), QMessageBox::ActionRole);
+        QPushButton *abortButton = msgBox.addButton(QMessageBox::Cancel);
 
-                msgBox.exec();
+        msgBox.exec();
 
-                if (msgBox.clickedButton() == runButton) {
-                    runModel();
-                } else if (msgBox.clickedButton() == abortButton) {
-                    // NOTE: Do nothing.
-                }
-            }
-        }
-        else
-        {
-            handleInvoluntarySSHDisconnect();
+        if (msgBox.clickedButton() == runButton) {
+            runModel();
+        } else if (msgBox.clickedButton() == abortButton) {
+            // NOTE: Do nothing.
         }
     }
 }
 
 void MainWindow::runModel()
 {
-    if(!projectDb_.databaseIsSet())
+    if(!parameterDbWasSelected_)
     {
-        //TODO: error (though it should not be possible to reach this state)
+        //it should not be possible to reach this state since the button should be disabled
         return;
     }
+
+    ui->pushRun->setEnabled(false);
+
+    log("Attempting to run Model...");
+
+    on_pushSaveParameters_clicked(); //NOTE: Save the parameters to the database.
+
+    if(weExpectToBeConnected_ && inputFileWasSelected_ && !inputFileWasUploaded_) //NOTE: If the input file was selected before we connected it has not been uploaded yet, so we have to do it now.
+    {
+        const char *remoteInputFileName = "uploadedinputs.dat";
+
+        QByteArray filename2 = selectedInputFilePath_.toLatin1();
+        bool success = sshInterface_->uploadEntireFile(filename2.data(), "~/", remoteInputFileName);
+
+        if(success) inputFileWasUploaded_ = true;
+    }
+
+    const char *ResultDb = "results.db";
+    const char *InputDb  = "inputs.db";
 
     if(weExpectToBeConnected_)
     {
@@ -550,43 +612,62 @@ void MainWindow::runModel()
             handleInvoluntarySSHDisconnect();
             return;
         }
+
+        //TODO: Upload the entire parameter database to the instance!
+        const char *remoteParameterDbName = "parameters.db";
+
+        QByteArray dbpath = selectedParameterDbPath_.toLatin1();
+        sshInterface_->uploadEntireFile(dbpath.data(), "~/", remoteParameterDbName);
+
+        QString exepath = ui->lineEditModelname->text();
+        QByteArray exepath2 = exepath.toLatin1();
+
+        //TODO: We probably should send info about what path we want for the remote result db. For now this is hard coded.
+        const char *remoteInputFile = inputFileWasUploaded_ ? "uploadedinputs.dat" : nullptr;
+        sshInterface_->runModel(exepath2.data(), remoteInputFile);
     }
     else
     {
-        //TODO: error (though it should not be possible to reach this state)
-        return;
+        //For now, assume the exe is in the same directory as the parameter database.
+        QFileInfo paramfile(selectedParameterDbPath_);
+        projectDirectory_ = paramfile.absolutePath();
+        QString program = projectDirectory_.absoluteFilePath(ui->lineEditModelname->text());
+
+        //TODO: Deleting the previous inputs and results db may not be that clean, but we don't have any system for managing it properly yet, so not deleting them causes errors.
+        QString resultpath = projectDirectory_.absoluteFilePath(ResultDb);
+        QFile::remove(resultpath);
+        QString inputpath = projectDirectory_.absoluteFilePath(InputDb);
+        QFile::remove(inputpath);
+
+        qDebug() << "trying to run program " << program;
+
+        QStringList arguments;
+        arguments << "run" << selectedInputFilePath_;
+        QProcess modelrun;
+        modelrun.setWorkingDirectory(projectDirectory_.path());
+        modelrun.start(program, arguments);
+        if(!modelrun.waitForStarted())
+        {
+            logError("Modelrun process did not start.");
+            ui->pushRun->setEnabled(true);
+            return;
+        }
+
+        connect(&modelrun, &QProcess::readyReadStandardOutput, [&](){log(modelrun.readAllStandardOutput());});
+
+        if(!modelrun.waitForFinished(-1)) //TODO: We could maybe have a timeout, but it is hard to predict what it should be (some models could potentially take a minute or two to run?).
+        {
+            logError("Modelrun process finished incorrectly.");
+            ui->pushRun->setEnabled(true);
+            return;
+        }
     }
 
+    log("Model run process completed.");
 
-    ui->pushRun->setEnabled(false);
-
-    log("Attempting to run Model...");
-
-    on_pushSaveParameters_clicked(); //NOTE: Save the parameters to the database.
-
-    //TODO: Upload the entire parameter database to the instance!
-    const char *remoteParameterDbName = "parameters.db";
-
-    QByteArray dbpath = selectedProjectDbPath_.toLatin1();
-    sshInterface_->uploadEntireFile(dbpath.data(), "~/", remoteParameterDbName);
-
-    QString exepath = ui->lineEditModelname->text();
-    QByteArray exepath2 = exepath.toLatin1();
-
-    //TODO: We probably should send info about what path we want for the remote result db. For now this is hard coded.
-    const char *remoteInputFile = inputFileWasUploaded_ ? "uploadedinputs.dat" : nullptr;
-    sshInterface_->runModel(exepath2.data(), remoteInputFile);
-
-    log("Model run and result output finished.");
-
-    const char *remoteResultDbPath = "results.db";
-    const char *remoteInputDbPath  = "inputs.db";
-
-    //NOTE: TODO: This may not be correct: In the future, the result structure may have changed after a new model run if we allow changing indexes in editor.
+    //TODO: We should do a more rigorous check here. If e.g. the user has switched out the input file between runs then the tree structure may no longer be valid and should be recreated.
     if(!treeResults_)
-    {
-        loadResultAndInputStructure(remoteResultDbPath, remoteInputDbPath);
-    }
+        loadResultAndInputStructure(ResultDb, InputDb);
 
     plotter_->clearCache();
 
@@ -633,20 +714,29 @@ void MainWindow::updateParameterView(const QItemSelection& selected, const QItem
     }
 }
 
+bool MainWindow::getDataSets(const char *dbname, const QVector<int> &IDs, const char *table, QVector<QVector<double>> &seriesout, int64_t &startdateout)
+{
+    if(weExpectToBeConnected_)
+    {
+        if(!sshInterface_->isInstanceConnected())
+        {
+            handleInvoluntarySSHDisconnect();
+            return false;
+        }
+
+        return sshInterface_->getDataSets(dbname, IDs, table, seriesout, startdateout);
+    }
+    else
+    {
+        QString dbpath = projectDirectory_.absoluteFilePath(dbname);
+        projectDb_.setDatabase(dbpath);
+        return projectDb_.getResultOrInputValues(table, IDs, seriesout, startdateout);
+    }
+}
+
+
 void MainWindow::updateGraphsAndResultSummary()
 {
-    if(!weExpectToBeConnected_)
-    {
-        //NOTE: Should not be possible to reach this state.
-        return;
-    }
-
-    if(!sshInterface_->isInstanceConnected())
-    {
-        handleInvoluntarySSHDisconnect();
-        return;
-    }
-
     if(!treeResults_ || !treeInputs_)
     {
         clearGraphsAndResultSummary();
@@ -703,10 +793,10 @@ void MainWindow::updateGraphsAndResultSummary()
         bool success = true;
         if(!uncachedResultIDs.empty())
         {
-            //TODO: Formalize the paths to the remote databases in some way so that they are not just scattered around in the code.
-            const char *remoteResultDbPath = "results.db";
+            //TODO: Formalize the paths to the databases in some way so that they are not just scattered around in the code.
+            const char *resultdb = "results.db";
             QVector<QVector<double>> resultsets;
-            success = sshInterface_->getDataSets(remoteResultDbPath, uncachedResultIDs, "Results", resultsets, startdate);
+            success = getDataSets(resultdb, uncachedResultIDs, "Results", resultsets, startdate);
             plotter_->addToCache(uncachedResultIDs, resultsets, startdate);
         }
 
@@ -718,9 +808,9 @@ void MainWindow::updateGraphsAndResultSummary()
             for(int &ID : uncachedInputIDs) ID -= maxresultID_; //NOTE: remap the input IDs back so that we can use them to request from the database.
 
             //TODO: Formalize the paths to the remote databases in some way so that they are not just scattered around in the code.
-            const char *remoteInputDbPath = "inputs.db";
+            const char *inputdb = "inputs.db";
             QVector<QVector<double>> inputsets;
-            success = sshInterface_->getDataSets(remoteInputDbPath, uncachedInputIDs, "Inputs", inputsets, startdate);
+            success = getDataSets(inputdb, uncachedInputIDs, "Inputs", inputsets, startdate);
 
             for(int &ID : uncachedInputIDs) ID += maxresultID_; //NOTE: map them back AGAIN because we now talk to the internal system.
 
@@ -789,14 +879,24 @@ void MainWindow::updateGraphToolTip(QMouseEvent *event)
             else if(ui->radioButtonDaily->isChecked() || ui->radioButtonMonthlyAverages->isChecked() || ui->radioButtonYearlyAverages->isChecked())
             {
                 //TODO: instead of doing this we should just store a description with each graph in the Plotter and read that here.
+                QString name;
+                QString parentName;
+                QString unit;
                 if(ID <= maxresultID_)
                 {
-                    valueString.append(treeResults_->getName(ID)).append(" (").append(treeResults_->getParentName(ID)).append("): ");
+                    name = treeResults_->getName(ID);
+                    parentName = treeResults_->getParentName(ID);
+                    unit = treeResults_->getUnit(ID);
+
                 }
                 else
                 {
-                    valueString.append(treeInputs_->getName(ID)).append(" (").append(treeInputs_->getParentName(ID)).append("): ");
+                    name = treeInputs_->getName(ID);
+                    parentName = treeInputs_->getParentName(ID);
+                    unit = treeInputs_->getUnit(ID);
                 }
+                //TODO: If there are nested indexes, we should probably also print the parent of the parent and so on...
+                valueString.append(name).append(" (").append(parentName).append(") ").append(unit).append(" : ");
             }
 
             bool foundrange;
@@ -841,11 +941,11 @@ void MainWindow::parameterWasEdited(ParameterEditAction param)
 {
     editUndoStack_.push_back(param);
 
-    toggleParametersHaveBeenEditedSinceLastSave(true);
+    setParametersHaveBeenEditedSinceLastSave(true);
 }
 
 
-void MainWindow::toggleParametersHaveBeenEditedSinceLastSave(bool changed)
+void MainWindow::setParametersHaveBeenEditedSinceLastSave(bool changed)
 {
     parametersHaveBeenEditedSinceLastSave_ = changed;
 

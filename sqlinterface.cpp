@@ -6,72 +6,76 @@
 
 SQLInterface::SQLInterface()
 {
+    db_ = QSqlDatabase::addDatabase("QSQLITE");
+}
+
+SQLInterface::~SQLInterface()
+{
+    if(dbIsSet_ && db_.open())
+    {
+        db_.close();
+    }
 }
 
 bool SQLInterface::setDatabase(QString& path)
 {
-    if(dbIsSet_)
-    {
-        db_.close();
-    }
-
-    db_ = QSqlDatabase::addDatabase("QSQLITE");
     db_.setDatabaseName(path);
 
-    if (!db_.open())
-    {
-        return false;
-    }
-    else
-    {
-       dbIsSet_ = true;
-       return true;
-    }
+    dbIsSet_ = true;
+    return true;
 }
 
 bool SQLInterface::getParameterStructure(QVector<TreeData> &structuredata)
 {
-    if(dbIsSet_)
+    if(!db_.open())
     {
-        const char *command = "SELECT parent.ID as parentID, child.ID, child.name, child.unit "
-                                      "FROM ParameterStructure as parent, ParameterStructure as child "
-                                      "WHERE child.lft > parent.lft "
-                                      "AND child.rgt < parent.rgt "
-                                      "AND child.dpt = parent.dpt + 1 "
-                                      "UNION "
-                                      "SELECT 0 as parentID, child.ID, child.Name, child.unit "
-                                      "FROM ParameterStructure as child "
-                                      "WHERE child.dpt = 0 "
-                                      "ORDER BY child.ID";
-        QSqlQuery query;
-        if(!query.prepare(command))
-        {
-            qDebug() << query.lastError();
-        }
-        if(!query.exec())
-        {
-            // emit logError(query.lastError());
-            qDebug() << query.lastError();
-            return false;
-        }
-        else
-        {
-            while(query.next())
-            {
-                TreeData item;
-                item.parentID = query.value(0).toInt();
-                item.ID       = query.value(1).toInt();
-                item.name     = query.value(2).toString();
-                item.unit     = query.value(3).toString();
-                structuredata.push_back(item);
-            }
-        }
+        return false;
     }
+
+    const char *command = "SELECT parent.ID as parentID, child.ID, child.name, child.unit "
+                                  "FROM ParameterStructure as parent, ParameterStructure as child "
+                                  "WHERE child.lft > parent.lft "
+                                  "AND child.rgt < parent.rgt "
+                                  "AND child.dpt = parent.dpt + 1 "
+                                  "UNION "
+                                  "SELECT 0 as parentID, child.ID, child.Name, child.unit "
+                                  "FROM ParameterStructure as child "
+                                  "WHERE child.dpt = 0 "
+                                  "ORDER BY child.ID";
+    QSqlQuery query;
+    if(!query.prepare(command))
+    {
+        qDebug() << query.lastError();
+    }
+    if(!query.exec())
+    {
+        // emit logError(query.lastError());
+        qDebug() << query.lastError();
+        db_.close();
+        return false;
+    }
+
+    while(query.next())
+    {
+        TreeData item;
+        item.parentID = query.value(0).toInt();
+        item.ID       = query.value(1).toInt();
+        item.name     = query.value(2).toString();
+        item.unit     = query.value(3).toString();
+        structuredata.push_back(item);
+    }
+
+    db_.close();
     return true;
 }
 
 bool SQLInterface::getParameterValuesMinMax(std::map<uint32_t, parameter_min_max_val_serial_entry>& IDtoParam)
 {
+    if(!db_.open())
+    {
+        return false;
+    }
+
     const char *value_tables[4] =
     {
         "bool",
@@ -103,6 +107,7 @@ bool SQLInterface::getParameterValuesMinMax(std::map<uint32_t, parameter_min_max
         if(!query.exec())
         {
             // emit logError(query.lastError());
+            db_.close();
             return false;
         }
 
@@ -117,6 +122,7 @@ bool SQLInterface::getParameterValuesMinMax(std::map<uint32_t, parameter_min_max
                 //TODO:
                 // emit logError("Database: Parameter with ID %d is registered as having type %s, but is in the table for %s.\n")
                 //                                   entry.ID, typetxt, value_tables[i]);
+                db_.close();
                 return false;
             }
             switch(types[i])
@@ -153,12 +159,17 @@ bool SQLInterface::getParameterValuesMinMax(std::map<uint32_t, parameter_min_max
             IDtoParam[entry.ID] = entry;
         }
     }
-
+    db_.close();
     return true;
 }
 
 bool SQLInterface::writeParameterValues(QVector<parameter_serial_entry>& writedata)
 {
+    if(!db_.open())
+    {
+        return false;
+    }
+
     //WARNING: Volatile! This depends on the order of the enums in parameter_type not being changed.
     const char *sqlcommand[4] =
     {
@@ -177,7 +188,6 @@ bool SQLInterface::writeParameterValues(QVector<parameter_serial_entry>& writeda
 
         QSqlQuery query;
         query.prepare(sqlcommand[entry.type]);
-        const char *command = sqlcommand[entry.type];
         query.bindValue(":id", entry.ID);
         switch(entry.type)
         {
@@ -204,6 +214,7 @@ bool SQLInterface::writeParameterValues(QVector<parameter_serial_entry>& writeda
             default:
             {
                 //TODO: invalid type, log error
+                db_.close();
                 return false;
             } break;
         }
@@ -212,11 +223,116 @@ bool SQLInterface::writeParameterValues(QVector<parameter_serial_entry>& writeda
         {
             qDebug() << query.lastError();
             // emit logError(query.lastError());
+            db_.close();
             return false;
         }
     }
     QSqlDatabase::database().commit();
 
+    db_.close();
     return true;
 }
 
+bool SQLInterface::getResultOrInputStructure(QVector<TreeData> &structuredata, const char *table)
+{
+    if(!db_.open())
+    {
+        db_.close();
+    }
+
+    char sqlcommand[512];
+    sprintf(sqlcommand,
+            "SELECT parent.ID AS parentID, child.ID, child.name, child.unit "
+            "FROM %s AS parent, %s AS child "
+            "WHERE child.lft > parent.lft "
+            "AND child.rgt < parent.rgt "
+            "AND child.dpt = parent.dpt + 1 "
+            "UNION "
+            "SELECT 0 as parentID, child.ID, child.name, child.unit "
+            "FROM %s as child "
+            "WHERE child.dpt = 0 "
+            "ORDER BY child.ID",
+        table, table, table
+    );
+
+    QSqlQuery query;
+    query.prepare(sqlcommand);
+
+    if(!query.exec())
+    {
+        // emit logError(query.lastError());
+        return false;
+    }
+
+    while(query.next())
+    {
+        TreeData entry;
+        entry.parentID = query.value(0).toInt();
+        entry.ID       = query.value(1).toInt();
+        entry.name     = query.value(2).toString();
+        entry.unit     = query.value(3).toString();
+        structuredata.push_back(entry);
+    }
+
+    db_.close();
+
+    return true;
+}
+
+bool SQLInterface::getResultOrInputValues(const char *table, const QVector<int>& IDs, QVector<QVector<double>> &seriesout, int64_t &startdateout)
+{
+
+    if(!db_.open())
+    {
+        return false;
+    }
+
+    char sqlcommand[512];
+
+    //NOTE: For now we only handle cases where the timestep is one day. Otherwise we would also have to read the timestep from somewhere or read out the entire series of time values.
+    if(!IDs.empty())
+    {
+        sprintf(sqlcommand, "SELECT date from %s WHERE ID=%d LIMIT 1", table, IDs[0]);
+
+        QSqlQuery query;
+        query.prepare(sqlcommand);
+
+        if(!query.exec())
+        {
+            // emit logError(query.lastError());
+            db_.close();
+            return false;
+        }
+
+        query.next();
+        startdateout = query.value(0).toLongLong();
+    }
+
+    for(int ID : IDs)
+    {
+        sprintf(sqlcommand, "SELECT value FROM %s WHERE ID=%d;", table, ID);
+
+        QSqlQuery query;
+        query.prepare(sqlcommand);
+
+        if(!query.exec())
+        {
+            // emit logError(query.lastError());
+            db_.close();
+            return false;
+        }
+
+        QVector<double> series;
+        series.reserve(100); // We don't know how large it is, but this tends to speed things up.
+
+        while(query.next())
+        {
+            series.push_back(query.value(0).toDouble());
+        }
+
+        seriesout.push_back(series);
+    }
+
+    db_.close();
+    return true;
+}
