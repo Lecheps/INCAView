@@ -682,6 +682,15 @@ bool SSHInterface::getStructureData(const char *remoteDB, const char *table, QVe
         {
             //qDebug() << "File size: " << filesize;
 
+            //NOTE:
+            // We expect to get a binary file on the following format:
+            // the entire file is a series of structure entries repeated after each other.
+            // each structure entry is a struct of type structure_serial_entry (128 bit) (see serialization.h):
+            // structure_serial_entry: (parent_id (32bit uint), child_id (32bit uint), childnamelen (32bit uint), unitlen (32bit uint))
+            // followed by
+            // childname (childnamelen bytes char string (not 0-terminated))
+            // unit      (unitlen      bytes char string (not 0-terminated))
+
             uint8_t *at = (uint8_t *)filedata;
             while(at < (uint8_t *)filedata + filesize)
             {
@@ -696,6 +705,7 @@ bool SSHInterface::getStructureData(const char *remoteDB, const char *table, QVe
                 std::string unitstr((char *)at, (char *)at + entry->unitLen);
                 at += entry->unitLen;
 
+                //NOTE: Uncomment the following line to see what we got.
                 //qDebug() << "parentid: " << parentID << "childid: " << childID << "name: " << namestr.data() << "unit: " << unitstr.data();
 
                 outdata.push_back({childID, parentID, QString::fromStdString(namestr), QString::fromStdString(unitstr)});
@@ -730,6 +740,15 @@ bool SSHInterface::getDataSets(const char *remoteDB, const QVector<int>& IDs, co
         success = readFile(&filedata, &filesize, tmpname);
         if(success)
         {
+
+            //NOTE:
+            // We expect a to get a binary file on the following format:
+            // numresults (64 bit uint)  - the number of result series that was returned by the request.
+            // repeated numresults times:
+            //      count (64 bit uint)  - the number of numbers in the current result series.
+            //      repeated count times:
+            //          double (64 bit float)
+
             uint8_t *data = (uint8_t *)filedata;
 
             uint64_t numresults = *(uint64_t *)data;
@@ -741,16 +760,16 @@ bool SSHInterface::getDataSets(const char *remoteDB, const QVector<int>& IDs, co
             {
                 valuedata.resize(numresults);
 
-                //qDebug() << numresults;
+                //qDebug() << "number of result series returned: " << numresults;
 
                 for(uint i = 0; i < numresults; ++i)
                 {
                     //TODO: Check that we never overstep the filesize;
                     uint64_t count = *(uint64_t *)data;
                     data += sizeof(uint64_t);
-                    size_t cnt = (int)count;
+                    size_t cnt = (size_t)count;
 
-                    //qDebug() << cnt;
+                    //qDebug() << "size of " << i << "th result series: " << cnt;
 
                     QVector<double>& current = valuedata[i];
                     current.resize(cnt);
