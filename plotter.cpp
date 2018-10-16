@@ -1,5 +1,12 @@
 #include "plotter.h"
 
+#include <boost/accumulators/accumulators.hpp>
+#include <boost/accumulators/statistics/mean.hpp>
+#include <boost/accumulators/statistics/min.hpp>
+#include <boost/accumulators/statistics/max.hpp>
+#include <boost/accumulators/statistics/variance.hpp>
+#include <boost/accumulators/statistics/covariance.hpp>
+#include <boost/accumulators/statistics/variates/covariate.hpp>
 
 double NormalCDFInverse(double p);
 double NormalCDF(double x);
@@ -65,19 +72,10 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                 QColor& color = graphColors_[firstunassignedcolor++];
                 if(firstunassignedcolor == graphColors_.count()) firstunassignedcolor = 0; // Cycle the colors
 
-                double mean = 0;
-                double min = std::numeric_limits<double>::max();
-                double max = std::numeric_limits<double>::min();
-                for(double d : yval)
-                {
-                    min = std::min(min, d);
-                    max = std::max(max, d);
-                    mean += d;
-                }
-                mean /= (double)cnt;
-                double stddev = 0;
-                for(double d : yval) stddev += (d - mean)*(d - mean);
-                stddev = std::sqrt(stddev / (double) cnt);
+
+                using namespace boost::accumulators;
+                accumulator_set<double, features<tag::min, tag::max, tag::mean, tag::variance>> acc;
+                for(double d : yval) acc(d);
 
                 resultsInfo_->append(QString(
                         "%1 <font color=%2>&#9608;&#9608;</font><br/>"
@@ -87,43 +85,42 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                         "standard deviation: %6<br/>"
                         "<br/>"
                       ).arg(resultnames[i], color.name())
-                       .arg(min, 0, 'g', 5)
-                       .arg(max, 0, 'g', 5)
-                       .arg(mean, 0, 'g', 5)
-                       .arg(stddev, 0, 'g', 5)
+                       .arg(min(acc), 0, 'g', 5)
+                       .arg(max(acc), 0, 'g', 5)
+                       .arg(mean(acc), 0, 'g', 5)
+                       .arg(std::sqrt(variance(acc)), 0, 'g', 5)
                 );
 
                 QCPGraph* graph = plot_->addGraph();
                 graph->setPen(QPen(color));
 
-                min = std::numeric_limits<double>::max();
-                max = std::numeric_limits<double>::min();
+                double graphmin = std::numeric_limits<double>::max();;
+                double graphmax = std::numeric_limits<double>::min();
 
                 if(mode == PlotMode_YearlyAverages)
                 {
                     QDateTime workingdate = QDateTime::fromSecsSinceEpoch(startDate_, Qt::OffsetFromUTC, 0);
                     QVector<double> displayedx, displayedy;
-                    min = std::numeric_limits<double>::max();
-                    max = std::numeric_limits<double>::min();
 
                     int prevyear = workingdate.date().year();
 
-                    double sum = 0;
                     int dayscnt = 0;
+                    accumulator_set<double, features<tag::mean>> localAcc;
+
                     for(int j = 0; j < cnt; ++j)
                     {
-                        sum += yval[j];
+                        localAcc(yval[j]);
                         dayscnt++;
                         int curyear = workingdate.date().year();
                         if((curyear != prevyear || (j == cnt-1)) && dayscnt > 0)
                         {
-                            double value = sum / (double) dayscnt;
+                            double value = mean(localAcc);
                             displayedy.push_back(value);
                             displayedx.push_back(QDateTime(QDate(prevyear, 1, 1), QTime(), Qt::OffsetFromUTC, 0).toSecsSinceEpoch());
-                            min = std::min(min, value);
-                            max = std::max(max, value);
+                            graphmin = std::min(graphmin, value);
+                            graphmax = std::max(graphmax, value);
 
-                            sum = 0;
+                            localAcc = accumulator_set<double, features<tag::mean>>(); //NOTE: Reset it.
                             dayscnt = 0;
                             prevyear = curyear;
                         }
@@ -138,29 +135,29 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                 else if(mode == PlotMode_MonthlyAverages)
                 {
                     QVector<double> displayedx, displayedy;
-                    min = std::numeric_limits<double>::max();
-                    max = std::numeric_limits<double>::min();
 
                     QDateTime workingdate = QDateTime::fromSecsSinceEpoch(startDate_, Qt::OffsetFromUTC, 0);
                     int prevmonth = workingdate.date().month();
                     int prevyear = workingdate.date().year();
 
-                    double sum = 0;
+                    accumulator_set<double, features<tag::mean>> localAcc;
+                    //double sum = 0;
                     int dayscnt = 0;
                     for(int j = 0; j < cnt; ++j)
                     {
-                        sum += yval[j];
+                        localAcc(yval[j]);
+                        //sum += yval[j];
                         dayscnt++;
                         int curmonth = workingdate.date().month();
                         if((curmonth != prevmonth || (j == cnt-1)) && dayscnt > 0)
                         {
-                            double value = sum / (double) dayscnt;
+                            double value = mean(localAcc);
                             displayedy.push_back(value);
                             displayedx.push_back(QDateTime(QDate(prevyear, prevmonth, 1), QTime(), Qt::OffsetFromUTC, 0).toSecsSinceEpoch());
-                            min = std::min(min, value);
-                            max = std::max(max, value);
+                            graphmin = std::min(graphmin, value);
+                            graphmax = std::max(graphmax, value);
 
-                            sum = 0;
+                            localAcc = accumulator_set<double, features<tag::mean>>(); //NOTE: Reset it.
                             dayscnt = 0;
                             prevmonth = curmonth;
                             prevyear = workingdate.date().year();
@@ -175,13 +172,14 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                 }
                 else //mode == PlotMode_Daily
                 {
+                    graphmin = min(acc);
+                    graphmax = max(acc);
+
                     QVector<double> displayedx(cnt);
                     for(int j = 0; j < cnt; ++j)
                     {
                         double value = yval[j];
                         displayedx[j] = (double)(startDate_ + 24*3600*j);
-                        min = std::min(min, value);
-                        max = std::max(max, value);
                     }
 
                     QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
@@ -191,8 +189,8 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                     graph->setData(displayedx, yval, true);
                 }
 
-                maxyrange = std::max(max, maxyrange);
-                minyrange = std::min(min, minyrange);
+                maxyrange = std::max(graphmax, maxyrange);
+                minyrange = std::min(graphmin, minyrange);
                 if(maxyrange - minyrange < QCPRange::minRange)
                 {
                     maxyrange = minyrange + 2.0*QCPRange::minRange;
@@ -221,48 +219,51 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
             //TODO: Should we give a warning if the count of the two sets are not equal?
             int count = std::min(observed.count(), modeled.count());
 
-            QVector<double> errors(count);
+            QVector<double> residuals(count);
             QVector<double> xval(count);
-            QVector<double> abserrors(count);
-
-            double meanobserved = 0.0;
-            double meanx = 0.0;
 
             //TODO: We should expect the observed series to have potential NaN values (missing data)..
             // That should be handled properly.
 
+            using namespace boost::accumulators;
+
+            //TODO: Do we really need separate accumulators for residual, absolute residual and squared residual? Could they be handled by one accumulator?
+            accumulator_set<double, features<tag::variance>> obsacc;
+            accumulator_set<double, features<tag::mean, tag::min, tag::max>>  residualacc;
+            accumulator_set<double, features<tag::mean>> residualabsacc;
+            accumulator_set<double, features<tag::sum, tag::mean>> residualsquareacc;
+            accumulator_set<double, features<tag::mean, tag::variance, tag::covariance<double, tag::covariate1>>> xacc;
+
             for(int i = 0; i < count; ++i)
             {
+                obsacc(observed[i]);
+
+                double residual = observed[i] - modeled[i];
+                residuals[i] = residual;
+
+                residualacc(residual);
+                residualabsacc(std::abs(residual));
+                residualsquareacc(residual*residual);
+
                 xval[i] = (double)(startDate_ + 24*3600*i);
-                meanobserved += observed[i];
-                meanx += xval[i];
+                xacc(xval[i], covariate1=residual);
             }
-            meanobserved /= (double)count;
-            meanx /= (double)count;
 
-            double min = std::numeric_limits<double>::max();
-            double max = std::numeric_limits<double>::min();
+            double observedvariance = variance(obsacc);
 
-            double sumerror = 0.0;
-            double sumabsoluteerror = 0.0;
-            double sumsquarederror = 0.0;
-            double observedvariance = 0.0;
-            for(int i = 0; i < count; ++i)
-            {
-                errors[i] = observed[i] - modeled[i];
-                sumerror += errors[i];
-                sumabsoluteerror += std::abs(errors[i]);
-                sumsquarederror += errors[i]*errors[i];
-                observedvariance += (observed[i] - meanobserved)*(observed[i] - meanobserved);
+            double meanx        = mean(xacc);
+            double xvariance    = variance(xacc);
+            double xycovariance = covariance(xacc);
 
-                min = errors[i] < min ? errors[i] : min;
-                max = errors[i] > max ? errors[i] : max;
-            }
-            double meanerror = sumerror / (double)count;
-            double meanabsoluteerror = sumabsoluteerror / (double)count;
-            double meansquarederror = sumsquarederror / (double)count;
+            double minres = min(residualacc);
+            double maxres = max(residualacc);
 
-            double nashsutcliffe = 1.0 - sumsquarederror / observedvariance; //TODO: check for observedvariance==0
+            double meanerror         = mean(residualacc);
+            double meanabsoluteerror = mean(residualabsacc);
+            double meansquarederror  = mean(residualsquareacc);
+            double sumsquarederror   = sum(residualsquareacc);
+
+            double nashsutcliffe = 1.0 - sumsquarederror / observedvariance; //TODO: check for observedvariance==0 ?
 
             resultsInfo_->append(QString(
                     "Observed: %1, vs Modeled: %2<br/>"
@@ -277,17 +278,6 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                    .arg(nashsutcliffe, 0, 'g', 5)
             );
 
-            double xvariance = 0.0;
-            double errorvariance = 0.0;
-            double xycovariance = 0.0;
-            for(int i = 0; i < count; ++i)
-            {
-                xvariance += (xval[i] - meanx)*(xval[i] - meanx);
-                errorvariance += (errors[i] - meanerror)*(errors[i] - meanerror);
-                xycovariance += (xval[i] - meanx)*(errors[i] - meanerror);
-            }
-            //double sigma = std::sqrt(errorvariance);
-
             //TODO: Make all the error plots nicer when the error is very small.
             double epsilon = 1e-6; //TODO: Find a less arbitrary epsilon.
 
@@ -298,12 +288,12 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                 plot_->xAxis->setTicker(dateTicker);
 
                 QCPGraph* graph = plot_->addGraph();
-                if(max - min > epsilon)
-                    plot_->yAxis->setRange(min, max);
+                if(maxres - minres > epsilon)
+                    plot_->yAxis->setRange(minres, maxres);
                 else
-                    plot_->yAxis->setRange(min - epsilon, min + epsilon);
+                    plot_->yAxis->setRange(minres - epsilon, minres + epsilon);
                 plot_->xAxis->setRange(xval.first(), xval.last());
-                graph->setData(xval, errors, true);
+                graph->setData(xval, residuals, true);
 
 
                 double beta = xycovariance / xvariance;
@@ -325,7 +315,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
             }
             else if(mode == PlotMode_ErrorNormalProbability)
             {
-                QVector<double> sortederrors = errors;
+                QVector<double> sortederrors = residuals;
                 qSort(sortederrors.begin(), sortederrors.end());
                 QVector<double> expected(count);
 
@@ -363,11 +353,11 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                 int numbins = 20; //TODO: How to determine a good number of bins?
                 QVector<double> valuebins(numbins);
                 QVector<double> values(numbins);
-                double range = (max - min) / (double) numbins;
+                double range = (maxres - minres) / (double) numbins;
 
                 for(int i = 0; i < numbins; ++i)
                 {
-                    values[i] = min + range*((double)i + 0.5);
+                    values[i] = minres + range*((double)i + 0.5);
                 }
 
                 double binmax = 0.0;
@@ -376,7 +366,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                 {
                     int bin = 0;
 
-                    if(range > epsilon) bin = (int)floor((errors[i]-min)/range);
+                    if(range > epsilon) bin = (int)floor((residuals[i]-minres)/range);
                     if(bin >= numbins) bin = numbins - 1; //NOTE: will happen with the max value;
                     if(bin < 0) bin = 0; //NOTE: SHOULD not happen.
                     valuebins[bin] += invcount;
@@ -384,15 +374,15 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                 }
 
                 plot_->yAxis->setRange(0.0, binmax);
-                if(max - min > epsilon)
-                    plot_->xAxis->setRange(min, max);
+                if(maxres - minres > epsilon)
+                    plot_->xAxis->setRange(minres, maxres);
                 else
-                    plot_->xAxis->setRange(min, min + epsilon);
+                    plot_->xAxis->setRange(minres, minres + epsilon);
 
                 QSharedPointer<QCPAxisTickerFixed> ticker(new QCPAxisTickerFixed);
                 int tickcount = 10;
                 ticker->setTickCount(tickcount);
-                ticker->setTickStep(ceil((max - min)/(double)tickcount));
+                ticker->setTickStep(ceil((maxres - minres)/(double)tickcount));
                 plot_->xAxis->setTicker(ticker); //NOTE: We have to reset the ticker in case it was set to a date ticker previously
 
                 QCPBars *bars = new QCPBars(plot_->xAxis, plot_->yAxis);
