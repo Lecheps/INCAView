@@ -32,7 +32,7 @@ public:
     bool isInstanceConnected();
 
     bool getStructureData(const char *remoteDB, const char *table, QVector<TreeData> &outdata);
-    bool getDataSets(const char *remoteDB, const QVector<int>& IDs, const char *table, QVector<QVector<double>> &valuedata, int64_t &date);
+    bool getDataSets(const char *remoteDB, const QVector<int>& IDs, const char *table, QVector<QVector<double>> &valuedata, QVector<int64_t> &startdates);
     bool uploadEntireFile(const char *localpath, const char *remotelocation, const char *remotefilename);
     bool downloadEntireFile(const char *localpath, const char *remotefilename);
 

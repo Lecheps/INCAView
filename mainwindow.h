@@ -63,7 +63,7 @@ private:
 
     void loadParameterDatabase(QString fileName);
 
-    bool getDataSets(const char *dbname, const QVector<int> &IDs, const char *table, QVector<QVector<double>> &seriesout, int64_t &startdateout);
+    bool getDataSets(const char *dbname, const QVector<int> &IDs, const char *table, QVector<QVector<double>> &seriesout, QVector<int64_t> &startdatesout);
 
     void loadParameterData();
     void loadResultAndInputStructure(const char *remoteResultDb, const char *RemoteInputDb);

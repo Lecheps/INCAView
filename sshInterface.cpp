@@ -720,7 +720,7 @@ bool SSHInterface::getStructureData(const char *remoteDB, const char *table, QVe
 }
 
 
-bool SSHInterface::getDataSets(const char *remoteDB, const QVector<int>& IDs, const char *table, QVector<QVector<double>> &valuedata, int64_t &date)
+bool SSHInterface::getDataSets(const char *remoteDB, const QVector<int>& IDs, const char *table, QVector<QVector<double>> &valuedata, QVector<int64_t> &startdates)
 {
     const char *tmpname = "data.dat";
 
@@ -753,17 +753,20 @@ bool SSHInterface::getDataSets(const char *remoteDB, const QVector<int>& IDs, co
 
             uint64_t numresults = *(uint64_t *)data;
             data += sizeof(uint64_t);
-            date = *(int64_t *)data;
+            int64_t date = *(int64_t *)data;
             data += sizeof(int64_t);
 
             if((int)numresults == IDs.count())
             {
                 valuedata.resize(numresults);
+                startdates.resize(numresults);
 
                 //qDebug() << "number of result series returned: " << numresults;
 
                 for(uint i = 0; i < numresults; ++i)
                 {
+                    startdates[i] = date; //TODO: This is BROKEN!!!!!! We instead have to update the sqlhandler so that it sends one start date per timeseries.
+
                     //TODO: Check that we never overstep the filesize;
                     uint64_t count = *(uint64_t *)data;
                     data += sizeof(uint64_t);
@@ -810,8 +813,8 @@ bool SSHInterface::createParameterDatabase(const char *remoteparameterfile, cons
 
     //NOTE: We delete the existing parameter database. This is only necessary because the exe does not delete it when trying to overwrite (i think).
     // will probably be fixed later.
-    //sprintf(command, "rm parameters.db;./%s create_parameter_database %s", remoteexename, remoteparameterfile);
     sprintf(command, "rm parameters.db;/home/magnus%s create_parameter_database %s", remoteexename, remoteparameterfile);
+    //sprintf(command, "rm parameters.db;/home/magnus%s create_parameter_database %s parameters.db", remoteexename, remoteparameterfile); //NOTE: switch to this once we have updated the models that are on the server!!
 
     //qDebug() << command;
 
@@ -833,21 +836,12 @@ void SSHInterface::runModel(const char *exename, const char *remoteInputFile)
         return;
     }
 
-    //NOTE results.db and inputs.db are the output database files from the model. If we have run correctly, the database output behaves strange if the databases are already there,
+    //NOTE results.db and inputs.db are the output database files from the model. If we have run correctly once before, the database output behaves strange if the databases are already there,
     // so we delete them for now, but we should find another way to handle this eventually.
     char runcommand[512];
-    if(remoteInputFile)
-    {
-        sprintf(runcommand, "rm results.db;rm inputs.db;/home/magnus/%s run %s", exename, remoteInputFile);
-        //sprintf(runcommand, "rm results.db;rm inputs.db;%s run %s", exename, remoteInputFile);
-    }
-    else
-    {
-        //NOTE: this will make the model use the default input file that is bundled with it
-        //Oops, only works when logged in as magnus since that is where the default input file is.
-        sprintf(runcommand, "rm results.db;rm inputs.db;./%s", exename);
-        //sprintf(runcommand, "rm results.db;rm inputs.db;%s", exename);
-    }
+
+    sprintf(runcommand, "rm results.db;rm inputs.db;/home/magnus/%s run %s", exename, remoteInputFile);
+    //sprintf(runcommand, "rm results.db; rm inputs.db;/home/magnus/%s run %s parameters.db", exename, remoteInputFile); //NOTE: switch to this when we update the models that are on the server!!
 
     std::stringstream out;
     runCommand(runcommand, out, true);

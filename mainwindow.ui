@@ -200,13 +200,6 @@
       <item>
        <layout class="QHBoxLayout" name="buttonsLayout">
         <item>
-         <widget class="QLabel" name="labelProject">
-          <property name="text">
-           <string>Project:</string>
-          </property>
-         </widget>
-        </item>
-        <item>
          <widget class="QPushButton" name="pushLoadProject">
           <property name="text">
            <string>Load parameter database</string>
@@ -217,13 +210,6 @@
          <widget class="QPushButton" name="pushSaveParameters">
           <property name="text">
            <string>Save parameter changes</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="pushCreateDatabase">
-          <property name="text">
-           <string>Create parameter database</string>
           </property>
          </widget>
         </item>
@@ -241,13 +227,6 @@
           </property>
           <property name="text">
            <string>Run model</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QLineEdit" name="lineEditModelname">
-          <property name="text">
-           <string>incan</string>
           </property>
          </widget>
         </item>
@@ -296,6 +275,44 @@
          </widget>
         </item>
        </layout>
+      </item>
+     </layout>
+    </item>
+    <item row="1" column="0">
+     <layout class="QHBoxLayout" name="horizontalLayout_5">
+      <item>
+       <widget class="QPushButton" name="pushCreateDatabase">
+        <property name="text">
+         <string>Create parameter database</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="pushExportParameters">
+        <property name="text">
+         <string>Export parameters</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="PushExportResults">
+        <property name="text">
+         <string>Export results</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="horizontalSpacer_2">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
       </item>
      </layout>
     </item>

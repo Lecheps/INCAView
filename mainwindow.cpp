@@ -261,15 +261,20 @@ void MainWindow::on_pushCreateDatabase_clicked()
 
     const char *remoteParameterFileName = "parameters.dat";
 
-    QString exepath = ui->lineEditModelname->text();
-    QByteArray exepath2 = exepath.toLatin1();
+    QString exename;
+    projectDb_.setDatabase(selectedParameterDbPath_);
+    projectDb_.getExenameFromParameterInfo(exename);
+
+    qDebug() << "exe name was: " << exename;
+
+    QByteArray exename2 = exename.toLatin1();
 
     QByteArray filename2 = fileName.toLatin1();
     bool success = sshInterface_->uploadEntireFile(filename2.data(), "~/", remoteParameterFileName);
 
     if(!success) return;
 
-    success = sshInterface_->createParameterDatabase(remoteParameterFileName, exepath2.data());
+    success = sshInterface_->createParameterDatabase(remoteParameterFileName, exename2.data());
 
     if(!success) return;
 
@@ -605,6 +610,12 @@ void MainWindow::runModel()
     const char *ResultDb = "results.db";
     const char *InputDb  = "inputs.db";
 
+    QString exename;
+    projectDb_.setDatabase(selectedParameterDbPath_);
+    projectDb_.getExenameFromParameterInfo(exename);
+
+    qDebug() << "exe name was: " << exename;
+
     if(weExpectToBeConnected_)
     {
         if(!sshInterface_->isInstanceConnected())
@@ -619,19 +630,19 @@ void MainWindow::runModel()
         QByteArray dbpath = selectedParameterDbPath_.toLatin1();
         sshInterface_->uploadEntireFile(dbpath.data(), "~/", remoteParameterDbName);
 
-        QString exepath = ui->lineEditModelname->text();
-        QByteArray exepath2 = exepath.toLatin1();
+
+        QByteArray exename2 = exename.toLatin1();
 
         //TODO: We probably should send info about what path we want for the remote result db. For now this is hard coded.
         const char *remoteInputFile = inputFileWasUploaded_ ? "uploadedinputs.dat" : nullptr;
-        sshInterface_->runModel(exepath2.data(), remoteInputFile);
+        sshInterface_->runModel(exename2.data(), remoteInputFile);
     }
     else
     {
         //For now, assume the exe is in the same directory as the parameter database.
         QFileInfo paramfile(selectedParameterDbPath_);
         projectDirectory_ = paramfile.absolutePath();
-        QString program = projectDirectory_.absoluteFilePath(ui->lineEditModelname->text());
+        QString program = projectDirectory_.absoluteFilePath(exename);
 
         //TODO: Deleting the previous inputs and results db may not be that clean, but we don't have any system for managing it properly yet, so not deleting them causes errors.
         QString resultpath = projectDirectory_.absoluteFilePath(ResultDb);
@@ -642,7 +653,7 @@ void MainWindow::runModel()
         qDebug() << "trying to run program " << program;
 
         QStringList arguments;
-        arguments << "run" << selectedInputFilePath_;
+        arguments << "run" << selectedInputFilePath_ << selectedParameterDbPath_;
         QProcess modelrun;
         modelrun.setWorkingDirectory(projectDirectory_.path());
         modelrun.start(program, arguments);
@@ -714,7 +725,7 @@ void MainWindow::updateParameterView(const QItemSelection& selected, const QItem
     }
 }
 
-bool MainWindow::getDataSets(const char *dbname, const QVector<int> &IDs, const char *table, QVector<QVector<double>> &seriesout, int64_t &startdateout)
+bool MainWindow::getDataSets(const char *dbname, const QVector<int> &IDs, const char *table, QVector<QVector<double>> &seriesout, QVector<int64_t> &startdatesout)
 {
     if(weExpectToBeConnected_)
     {
@@ -724,13 +735,13 @@ bool MainWindow::getDataSets(const char *dbname, const QVector<int> &IDs, const 
             return false;
         }
 
-        return sshInterface_->getDataSets(dbname, IDs, table, seriesout, startdateout);
+        return sshInterface_->getDataSets(dbname, IDs, table, seriesout, startdatesout);
     }
     else
     {
         QString dbpath = projectDirectory_.absoluteFilePath(dbname);
         projectDb_.setDatabase(dbpath);
-        return projectDb_.getResultOrInputValues(table, IDs, seriesout, startdateout);
+        return projectDb_.getResultOrInputValues(table, IDs, seriesout, startdatesout);
     }
 }
 
@@ -787,17 +798,15 @@ void MainWindow::updateGraphsAndResultSummary()
         QVector<int> uncachedResultIDs;
         plotter_->filterUncachedIDs(resultIDs, uncachedResultIDs);
 
-        int64_t startdate;
-        bool setStartDate = false;
-
         bool success = true;
         if(!uncachedResultIDs.empty())
         {
             //TODO: Formalize the paths to the databases in some way so that they are not just scattered around in the code.
             const char *resultdb = "results.db";
             QVector<QVector<double>> resultsets;
-            success = getDataSets(resultdb, uncachedResultIDs, "Results", resultsets, startdate);
-            plotter_->addToCache(uncachedResultIDs, resultsets, startdate);
+            QVector<int64_t> startDates;
+            success = getDataSets(resultdb, uncachedResultIDs, "Results", resultsets, startDates);
+            plotter_->addToCache(uncachedResultIDs, resultsets, startDates);
         }
 
         QVector<int> uncachedInputIDs;
@@ -810,11 +819,12 @@ void MainWindow::updateGraphsAndResultSummary()
             //TODO: Formalize the paths to the remote databases in some way so that they are not just scattered around in the code.
             const char *inputdb = "inputs.db";
             QVector<QVector<double>> inputsets;
-            success = getDataSets(inputdb, uncachedInputIDs, "Inputs", inputsets, startdate);
+            QVector<int64_t> startDates;
+            success = getDataSets(inputdb, uncachedInputIDs, "Inputs", inputsets, startDates);
 
             for(int &ID : uncachedInputIDs) ID += maxresultID_; //NOTE: map them back AGAIN because we now talk to the internal system.
 
-            plotter_->addToCache(uncachedInputIDs, inputsets, startdate);
+            plotter_->addToCache(uncachedInputIDs, inputsets, startDates);
         }
 
         //NOTE: For now we don't have a individual start date for each time series. Instead, we just get one. And we assume that the start date for the result data

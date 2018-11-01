@@ -16,7 +16,9 @@ public:
     bool writeParameterValues(QVector<parameter_serial_entry>& writedata);
 
     bool getResultOrInputStructure(QVector<TreeData> &structuredata, const char *table);
-    bool getResultOrInputValues(const char *table, const QVector<int>& IDs, QVector<QVector<double>> &seriesout, int64_t &startdateout);
+    bool getResultOrInputValues(const char *table, const QVector<int>& IDs, QVector<QVector<double>> &seriesout, QVector<int64_t> &startdatesout);
+
+    bool getExenameFromParameterInfo(QString& exename);
 
     bool setDatabase(QString& path);
     bool databaseIsSet() { return dbIsSet_; }

@@ -3,6 +3,7 @@
 #include "parameter.h"
 #include <QDebug>
 #include <QSqlError>
+#include <limits>
 
 SQLInterface::SQLInterface()
 {
@@ -279,7 +280,7 @@ bool SQLInterface::getResultOrInputStructure(QVector<TreeData> &structuredata, c
     return true;
 }
 
-bool SQLInterface::getResultOrInputValues(const char *table, const QVector<int>& IDs, QVector<QVector<double>> &seriesout, int64_t &startdateout)
+bool SQLInterface::getResultOrInputValues(const char *table, const QVector<int>& IDs, QVector<QVector<double>> &seriesout, QVector<int64_t> &startdatesout)
 {
 
     if(!db_.open())
@@ -290,27 +291,9 @@ bool SQLInterface::getResultOrInputValues(const char *table, const QVector<int>&
     char sqlcommand[512];
 
     //NOTE: For now we only handle cases where the timestep is one day. Otherwise we would also have to read the timestep from somewhere or read out the entire series of time values.
-    if(!IDs.empty())
-    {
-        sprintf(sqlcommand, "SELECT date from %s WHERE ID=%d LIMIT 1", table, IDs[0]);
-
-        QSqlQuery query;
-        query.prepare(sqlcommand);
-
-        if(!query.exec())
-        {
-            // emit logError(query.lastError());
-            db_.close();
-            return false;
-        }
-
-        query.next();
-        startdateout = query.value(0).toLongLong();
-    }
-
     for(int ID : IDs)
     {
-        sprintf(sqlcommand, "SELECT value FROM %s WHERE ID=%d;", table, ID);
+        sprintf(sqlcommand, "SELECT date, value FROM %s WHERE ID=%d;", table, ID);
 
         QSqlQuery query;
         query.prepare(sqlcommand);
@@ -325,13 +308,55 @@ bool SQLInterface::getResultOrInputValues(const char *table, const QVector<int>&
         QVector<double> series;
         series.reserve(100); // We don't know how large it is, but this tends to speed things up.
 
+        int64_t startDate;
+        bool first = true;
+
         while(query.next())
         {
-            series.push_back(query.value(0).toDouble());
+            if(first)
+            {
+                startDate = query.value(0).toLongLong();
+                first = false;
+            }
+
+            if(query.value(1).isNull())
+            {
+                series.push_back(std::numeric_limits<double>::quiet_NaN());
+            }
+            else
+            {
+                series.push_back(query.value(1).toDouble());
+            }
         }
 
         seriesout.push_back(series);
+        startdatesout.push_back(startDate);
     }
+
+    db_.close();
+    return true;
+}
+
+bool SQLInterface::getExenameFromParameterInfo(QString& exename)
+{
+    if(!db_.open())
+    {
+        return false;
+    }
+
+    QSqlQuery query;
+    query.prepare("SELECT Exename FROM Info");
+
+    if(!query.exec())
+    {
+        // emit logError(query.lastError());
+        qDebug() << query.lastError();
+        db_.close();
+        return false;
+    }
+
+    query.next();
+    exename = query.value(0).toString();
 
     db_.close();
     return true;

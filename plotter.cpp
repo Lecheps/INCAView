@@ -7,6 +7,7 @@
 #include <boost/accumulators/statistics/variance.hpp>
 #include <boost/accumulators/statistics/covariance.hpp>
 #include <boost/accumulators/statistics/variates/covariate.hpp>
+#include <limits>
 
 double NormalCDFInverse(double p);
 double NormalCDF(double x);
@@ -21,15 +22,14 @@ void Plotter::filterUncachedIDs(const QVector<int>& IDs, QVector<int>& uncachedO
     }
 }
 
-void Plotter::addToCache(const QVector<int>& newIDs, const QVector<QVector<double>>& newResultsets, int64_t startDate)
+void Plotter::addToCache(const QVector<int>& newIDs, const QVector<QVector<double>>& newResultsets, const QVector<int64_t>& startDates)
 {
     for(int i = 0; i < newResultsets.count(); ++i)
     {
         int ID = newIDs[i];
         cache_[ID] = newResultsets[i]; //NOTE: Vector copy
+        startDateCache_[ID] = startDates[i];
     }
-
-    startDate_ = startDate;
 }
 
 void Plotter::clearPlots()
@@ -62,6 +62,8 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
 
             const QVector<double>& yval = cache_[ID];
 
+            int64_t startDate = startDateCache_[ID];
+
             if(yval.empty()) continue; //TODO: Log warning?
 
             int cnt = yval.count();
@@ -75,7 +77,11 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
 
                 using namespace boost::accumulators;
                 accumulator_set<double, features<tag::min, tag::max, tag::mean, tag::variance>> acc;
-                for(double d : yval) acc(d);
+                for(double d : yval)
+                {
+                    if(!std::isnan(d))
+                        acc(d);
+                }
 
                 resultsInfo_->append(QString(
                         "%1 <font color=%2>&#9608;&#9608;</font><br/>"
@@ -99,7 +105,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
 
                 if(mode == PlotMode_YearlyAverages)
                 {
-                    QDateTime workingdate = QDateTime::fromSecsSinceEpoch(startDate_, Qt::OffsetFromUTC, 0);
+                    QDateTime workingdate = QDateTime::fromSecsSinceEpoch(startDate, Qt::OffsetFromUTC, 0);
                     QVector<double> displayedx, displayedy;
 
                     int prevyear = workingdate.date().year();
@@ -136,7 +142,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                 {
                     QVector<double> displayedx, displayedy;
 
-                    QDateTime workingdate = QDateTime::fromSecsSinceEpoch(startDate_, Qt::OffsetFromUTC, 0);
+                    QDateTime workingdate = QDateTime::fromSecsSinceEpoch(startDate, Qt::OffsetFromUTC, 0);
                     int prevmonth = workingdate.date().month();
                     int prevyear = workingdate.date().year();
 
@@ -179,7 +185,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                     for(int j = 0; j < cnt; ++j)
                     {
                         double value = yval[j];
-                        displayedx[j] = (double)(startDate_ + 24*3600*j);
+                        displayedx[j] = (double)(startDate + 24*3600*j);
                     }
 
                     QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
@@ -208,8 +214,25 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
             int ID0 = IDs[0];
             int ID1 = IDs[1];
 
+            int64_t startDatemod = startDateCache_[ID0];
+            int64_t startDateobs = startDateCache_[ID1];
+            int64_t startDate = std::max(startDatemod, startDateobs);
+            int64_t alignmod = 0;
+            int64_t alignobs = 0;
+            if(startDatemod < startDateobs)
+            {
+                alignmod = (startDateobs-startDatemod)/86400; //Again, this assumes one-day-timesteps...
+            }
+            else if(startDateobs < startDatemod)
+            {
+                alignobs = (startDatemod-startDateobs)/86400; //Again, this assumes one-day-timesteps...
+            }
+
             const QVector<double>& modeled = cache_[ID0];
             const QVector<double>& observed = cache_[ID1];
+
+
+            //TODO: we actually need to compute an offset here to align them!
 
             QString modeledName = resultnames[0];
             QString observedName = resultnames[1];
@@ -217,7 +240,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
             if(observed.empty() || modeled.empty()) return;
 
             //TODO: Should we give a warning if the count of the two sets are not equal?
-            int count = std::min(observed.count(), modeled.count());
+            int count = std::min(observed.count()-alignobs, modeled.count()-alignmod);
 
             QVector<double> residuals(count);
             QVector<double> xval(count);
@@ -236,17 +259,27 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
 
             for(int i = 0; i < count; ++i)
             {
-                obsacc(observed[i]);
+                xval[i] = (double)(startDate + 24*3600*i);
+                double mod = modeled[i+alignmod];
+                double obs = observed[i+alignobs];
 
-                double residual = observed[i] - modeled[i];
-                residuals[i] = residual;
+                if(!std::isnan(mod) && !std::isnan(obs))
+                {
+                    double residual = obs - mod;
+                    residuals[i] = residual;
 
-                residualacc(residual);
-                residualabsacc(std::abs(residual));
-                residualsquareacc(residual*residual);
+                    obsacc(obs);
+                    residualacc(residual);
+                    residualabsacc(std::abs(residual));
+                    residualsquareacc(residual*residual);
 
-                xval[i] = (double)(startDate_ + 24*3600*i);
-                xacc(xval[i], covariate1=residual);
+
+                    xacc(xval[i], covariate1=residual); //NOTE: Used for linear regression.
+                }
+                else
+                {
+                    residuals[i] = std::numeric_limits<double>::quiet_NaN();
+                }
             }
 
             double observedvariance = variance(obsacc);
@@ -296,6 +329,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                 graph->setData(xval, residuals, true);
 
 
+                //TODO: The linear regression may not be correct if there is a lot of missing observed data.
                 double beta = xycovariance / xvariance;
                 double alpha = meanerror - beta * meanx;
                 QVector<double> linearError(count);
