@@ -8,7 +8,7 @@
 class Parameter
 {
 public:
-    Parameter(const QString& name, const QString& unit, int ID, int parentID, const parameter_min_max_val_serial_entry &entry);
+    Parameter(const QString& name, const QString& unit, const QString& description, int ID, int parentID, const parameter_min_max_val_serial_entry &entry);
 
     bool isValidValue(const QString &valueVar);
     bool setValue(const QString &valueVar);
@@ -23,6 +23,7 @@ public:
 
     QString name;
     QString unit;
+    QString description;
     int ID;
     int parentID;
     parameter_type type;

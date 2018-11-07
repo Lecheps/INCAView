@@ -2,10 +2,11 @@
 #include <QDateTime>
 #include <QLocale>
 
-Parameter::Parameter(const QString& name, const QString& unit, int ID, int parentID, const parameter_min_max_val_serial_entry& entry)
+Parameter::Parameter(const QString& name, const QString& unit, const QString &description, int ID, int parentID, const parameter_min_max_val_serial_entry& entry)
 {
     this->name = name;
     this->unit = unit;
+    this->description = description;
     this->ID = ID;
     this->parentID = parentID;
     type = (parameter_type)entry.type;

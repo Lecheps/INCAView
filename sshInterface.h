@@ -36,11 +36,12 @@ public:
     bool uploadEntireFile(const char *localpath, const char *remotelocation, const char *remotefilename);
     bool downloadEntireFile(const char *localpath, const char *remotefilename);
 
-    bool createParameterDatabase(const char *remoteparameterfile, const char *exename);
+    bool createParameterDatabase(const char *, const char *, const char*);
+    bool exportParameters(const char *, const char *, const char *);
 
     const char * getDisconnectionMessage();
 
-    void runModel(const char *exename, const char *remoteInputFile);
+    void runModel(const char *exename, const char *remoteInputFile, const char *remotedbname);
 
     void sendNoop();
 

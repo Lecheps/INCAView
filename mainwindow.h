@@ -38,6 +38,8 @@ private slots:
     void on_pushSaveParameters_clicked();
     void on_pushCreateDatabase_clicked();
     void on_pushUploadInputs_clicked();
+    void on_pushExportParameters_clicked();
+    void on_pushExportResults_clicked();
     void closeEvent (QCloseEvent *);
 
     void updateParameterView(const QItemSelection &, const QItemSelection &);
@@ -58,6 +60,7 @@ private slots:
 
 private:
     void setParametersHaveBeenEditedSinceLastSave(bool);
+    bool runModelProcessLocally(const QString& program, const QStringList& arguments);
     void runModel();
     void setWeExpectToBeConnected(bool);
 

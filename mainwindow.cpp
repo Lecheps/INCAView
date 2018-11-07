@@ -48,6 +48,7 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->tableViewParameters->setEditTriggers(QAbstractItemView::AllEditTriggers);
 
     ui->pushSaveParameters->setEnabled(false);
+    ui->pushExportParameters->setEnabled(false);
     //ui->pushCreateDatabase->setEnabled(false);
     //ui->pushUploadInputs->setEnabled(false);
 
@@ -76,7 +77,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
     QObject::connect(ui->widgetPlotResults, &QCustomPlot::mouseMove, this, &MainWindow::updateGraphToolTip);
 
-    //NOTE: We have to think about whether the login info for the hub should be hard coded.
+    //TODO: We have to think about whether the login info for the hub should be hard coded.
     //NOTE: The hub ssh keys have to be distributed with the exe and be placed in the same folder as the exe.
     sshInterface_ = new SSHInterface("35.198.76.72", "magnus", "hubkey");
 
@@ -193,7 +194,7 @@ void MainWindow::on_pushLoadProject_clicked()
 
 void MainWindow::loadParameterDatabase(QString fileName)
 {
-    if(parameterDbWasSelected_)
+    if(parameterDbWasSelected_) //NOTE: If a database is already selected we have to do some cleanup.
     {
         if(parametersHaveBeenEditedSinceLastSave_)
         {
@@ -207,9 +208,11 @@ void MainWindow::loadParameterDatabase(QString fileName)
         }
 
         if(treeResults_) delete treeResults_;
+        if(treeInputs_) delete treeInputs_;
         treeResults_ = nullptr;
+        treeInputs_ = nullptr;
 
-        updateGraphsAndResultSummary();
+        clearGraphsAndResultSummary();
     }
 
     bool success = projectDb_.setDatabase(fileName);
@@ -218,12 +221,17 @@ void MainWindow::loadParameterDatabase(QString fileName)
         parameterDbWasSelected_ = true;
         selectedParameterDbPath_ = fileName;
 
+        QFileInfo fileinfo(selectedParameterDbPath_);
+        projectDirectory_ = fileinfo.absolutePath();
+
         loadParameterData();
 
         ui->treeViewParameters->expandToDepth(3);
         ui->treeViewParameters->resizeColumnToContents(0);
         ui->treeViewParameters->setColumnHidden(1, true);
         ui->treeViewParameters->setColumnHidden(2, true);
+
+        ui->pushExportParameters->setEnabled(true);
 
         updateRunButtonState();
 
@@ -233,8 +241,9 @@ void MainWindow::loadParameterDatabase(QString fileName)
     }
     else
     {
-        ui->pushRun->setEnabled(false);
-        //TODO: error handling
+        updateRunButtonState();
+        ui->pushExportParameters->setEnabled(false);
+        //TODO: additional error handling?
     }
 }
 
@@ -260,7 +269,10 @@ void MainWindow::on_pushCreateDatabase_clicked()
     }
 
     const char *remoteParameterFileName = "parameters.dat";
+    const char *remoteParameterDbName   = "parameters.db";
 
+    //TODO: This means that they have to have a parameter database loaded, which is weird since what they are doing here is trying to create one.
+    // We should instead query a selection list of models that can be loaded from the server.
     QString exename;
     projectDb_.setDatabase(selectedParameterDbPath_);
     projectDb_.getExenameFromParameterInfo(exename);
@@ -274,7 +286,7 @@ void MainWindow::on_pushCreateDatabase_clicked()
 
     if(!success) return;
 
-    success = sshInterface_->createParameterDatabase(remoteParameterFileName, exename2.data());
+    success = sshInterface_->createParameterDatabase(exename2.data(), remoteParameterFileName, remoteParameterDbName);
 
     if(!success) return;
 
@@ -289,11 +301,67 @@ void MainWindow::on_pushCreateDatabase_clicked()
     QByteArray saveFileName2 = saveFileName.toLatin1();
 
     //TODO: Don't hard code the location of the remote parameter database file?
-    success = sshInterface_->downloadEntireFile(saveFileName2.data(), "parameters.db");
+    success = sshInterface_->downloadEntireFile(saveFileName2.data(), remoteParameterDbName);
 
     if(!success) return;
 
     loadParameterDatabase(saveFileName);
+}
+
+void MainWindow::on_pushExportParameters_clicked()
+{
+    if(!parameterDbWasSelected_)
+    {
+        return; //NOTE: Just in case. This should not be possible due to handling of button states
+    }
+
+    QString exportParametersPath = QFileDialog::getSaveFileName(this,
+                tr("Select file to export parameters"), "", tr("Data files (*.dat)"));
+    if(exportParametersPath.isEmpty() || exportParametersPath.isNull()) return; //NOTE: In case the user clicked cancel or closed the dialog.
+
+    on_pushSaveParameters_clicked(); //NOTE: save any changes to the database.
+
+    QString exename;
+    projectDb_.setDatabase(selectedParameterDbPath_);
+    projectDb_.getExenameFromParameterInfo(exename);
+
+    if(weExpectToBeConnected_)
+    {
+        if(!sshInterface_->isInstanceConnected())
+        {
+            handleInvoluntarySSHDisconnect();
+            return;
+        }
+
+        const char *remoteParameterFileName = "parameters.dat";
+        const char *remoteParameterDbName = "parameters.db";
+
+        QByteArray dbfilename2 = selectedParameterDbPath_.toLatin1();
+        bool success = sshInterface_->uploadEntireFile(dbfilename2.data(), "~/", remoteParameterDbName);
+        if(!success) return;
+
+        QByteArray exename2 = exename.toLatin1();
+
+        success = sshInterface_->exportParameters(exename2.data(), remoteParameterDbName, remoteParameterFileName);
+
+        if(!success) return;
+
+        QByteArray saveFileName2 = exportParametersPath.toLatin1();
+
+        success = sshInterface_->downloadEntireFile(saveFileName2.data(), remoteParameterFileName);
+    }
+    else
+    {
+        //For now, assume the exe is in the same directory as the parameter database.
+        QString program = projectDirectory_.absoluteFilePath(exename);
+
+        qDebug() << "trying to run program " << program;
+
+        QStringList arguments;
+        arguments << "export_parameters" <<  selectedParameterDbPath_ << exportParametersPath;
+
+        runModelProcessLocally(program, arguments);
+    }
 }
 
 void MainWindow::on_pushUploadInputs_clicked()
@@ -358,7 +426,7 @@ void MainWindow::loadParameterData()
             {
                 //This ID corresponds to a parameter, and so we add it to the parameter model.
                 parameter_min_max_val_serial_entry& par = parref->second;
-                parameterModel_->addParameter(data.name, data.unit, data.ID, data.parentID, par);
+                parameterModel_->addParameter(data.name, data.unit, data.description, data.ID, data.parentID, par);
             }
         }
 
@@ -459,13 +527,17 @@ void MainWindow::loadResultAndInputStructure(const char *ResultDb, const char *I
 
 void MainWindow::updateRunButtonState()
 {
-    if(//weExpectToBeConnected_ &&
-       parameterDbWasSelected_ &&
+    if(parameterDbWasSelected_ &&
        inputFileWasSelected_
       )
     {
         ui->pushRun->setEnabled(true);
     }
+    else
+    {
+        ui->pushRun->setEnabled(false);
+    }
+
 }
 
 void MainWindow::setWeExpectToBeConnected(bool connected)
@@ -583,6 +655,31 @@ void MainWindow::on_pushRun_clicked()
     }
 }
 
+
+bool MainWindow::runModelProcessLocally(const QString& program, const QStringList& arguments)
+{
+    QProcess modelrun;
+    modelrun.setWorkingDirectory(projectDirectory_.path());
+    modelrun.start(program, arguments);
+    if(!modelrun.waitForStarted())
+    {
+        logError("Model exe process did not start.");
+        ui->pushRun->setEnabled(true);
+        return false;
+    }
+
+    connect(&modelrun, &QProcess::readyReadStandardOutput, [&](){log(modelrun.readAllStandardOutput());});
+
+    if(!modelrun.waitForFinished(-1)) //TODO: We could maybe have a timeout, but it is hard to predict what it should be (some models could potentially take a minute or two to run?).
+    {
+        logError("Model exe process finished incorrectly.");
+        ui->pushRun->setEnabled(true);
+        return false;
+    }
+
+    return true;
+}
+
 void MainWindow::runModel()
 {
     if(!parameterDbWasSelected_)
@@ -633,15 +730,12 @@ void MainWindow::runModel()
 
         QByteArray exename2 = exename.toLatin1();
 
-        //TODO: We probably should send info about what path we want for the remote result db. For now this is hard coded.
-        const char *remoteInputFile = inputFileWasUploaded_ ? "uploadedinputs.dat" : nullptr;
-        sshInterface_->runModel(exename2.data(), remoteInputFile);
+        const char *remoteInputFile = "uploadedinputs.dat";
+        sshInterface_->runModel(exename2.data(), remoteInputFile, remoteParameterDbName);
     }
     else
     {
         //For now, assume the exe is in the same directory as the parameter database.
-        QFileInfo paramfile(selectedParameterDbPath_);
-        projectDirectory_ = paramfile.absolutePath();
         QString program = projectDirectory_.absoluteFilePath(exename);
 
         //TODO: Deleting the previous inputs and results db may not be that clean, but we don't have any system for managing it properly yet, so not deleting them causes errors.
@@ -654,24 +748,8 @@ void MainWindow::runModel()
 
         QStringList arguments;
         arguments << "run" << selectedInputFilePath_ << selectedParameterDbPath_;
-        QProcess modelrun;
-        modelrun.setWorkingDirectory(projectDirectory_.path());
-        modelrun.start(program, arguments);
-        if(!modelrun.waitForStarted())
-        {
-            logError("Modelrun process did not start.");
-            ui->pushRun->setEnabled(true);
-            return;
-        }
 
-        connect(&modelrun, &QProcess::readyReadStandardOutput, [&](){log(modelrun.readAllStandardOutput());});
-
-        if(!modelrun.waitForFinished(-1)) //TODO: We could maybe have a timeout, but it is hard to predict what it should be (some models could potentially take a minute or two to run?).
-        {
-            logError("Modelrun process finished incorrectly.");
-            ui->pushRun->setEnabled(true);
-            return;
-        }
+        runModelProcessLocally(program, arguments);
     }
 
     log("Model run process completed.");
@@ -936,6 +1014,78 @@ void MainWindow::updateGraphToolTip(QMouseEvent *event)
     {
         ui->labelGraphValues->setText("");
     }
+}
+
+
+void MainWindow::on_pushExportResults_clicked()
+{
+    if(!treeResults_)
+    {
+        return;
+    }
+
+    QString saveResultsPath = QFileDialog::getSaveFileName(this,
+                tr("Select file to save results"), "", tr("Data files (*.csv)"));
+
+    if(saveResultsPath.isEmpty() || saveResultsPath.isNull()) return; //NOTE: In case the user clicked cancel or closed the dialog.
+
+    QModelIndexList resultindexes = ui->treeViewResults->selectionModel()->selectedIndexes();
+
+    QVector<QString> names;
+
+    QVector<int> resultIDs;
+    for(auto index : resultindexes)
+    {
+        if(index.column() == 0)
+        {
+            auto idx = index.model()->index(index.row(),index.column() + 1, index.parent());
+            int ID = (treeResults_->itemData(idx))[0].toInt();
+            if( ID != 0 && treeResults_->childCount(ID) == 0) //NOTE: If it has children in the tree, it is an indexer or index, not a result series.
+            {
+                resultIDs.push_back(ID);
+                QString name = treeResults_->getName(ID);
+                QString parentName = treeResults_->getParentName(ID);
+                names.push_back(name + " (" + parentName + ")"); //TODO: We should get all the indexes here, not just the immediate one.
+            }
+        }
+    }
+
+    if(resultIDs.empty()) return;
+
+    std::ofstream file(saveResultsPath.toLatin1().data());
+    if(!file.is_open())
+    {
+        logError(QString("Unable to open file ") + saveResultsPath);
+    }
+
+    //NOTE: Since these IDs have been clicked, we can assume that their timeseries have been loaded into the plotter.
+    //NOTE: For result series it is safe to assume that they all have the same length.
+    int seriesCount = resultIDs.count();
+    QVector<QVector<double>*> resultSeries(seriesCount);
+    for(size_t idx = 0; idx < seriesCount; ++idx)
+    {
+        resultSeries[idx] = &plotter_->cache_[resultIDs[idx]];
+
+        file << "\"" << names[idx].toLatin1().data() << "\"";
+        if(idx < seriesCount - 1) file << ",";
+    }
+    file << std::endl;
+
+    int stepcount = resultSeries[0]->count();
+
+    for(int t = 0; t < stepcount; ++t)
+    {
+        for(int idx = 0; idx < seriesCount; ++idx)
+        {
+            file << resultSeries[idx]->at(t);
+            if(idx < seriesCount - 1) file << ",";
+        }
+        file << std::endl;
+    }
+
+    log("Results exported to " + saveResultsPath);
+
+    file.close();
 }
 
 

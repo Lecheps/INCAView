@@ -801,7 +801,7 @@ bool SSHInterface::getDataSets(const char *remoteDB, const QVector<int>& IDs, co
 }
 
 
-bool SSHInterface::createParameterDatabase(const char *remoteparameterfile, const char *remoteexename)
+bool SSHInterface::createParameterDatabase(const char *remoteexename, const char *remoteparameterfile, const char *remoteparameterdb)
 {
     if(!isInstanceConnected())
     {
@@ -811,10 +811,8 @@ bool SSHInterface::createParameterDatabase(const char *remoteparameterfile, cons
     }
     char command[512];
 
-    //NOTE: We delete the existing parameter database. This is only necessary because the exe does not delete it when trying to overwrite (i think).
-    // will probably be fixed later.
-    sprintf(command, "rm parameters.db;/home/magnus%s create_parameter_database %s", remoteexename, remoteparameterfile);
-    //sprintf(command, "rm parameters.db;/home/magnus%s create_parameter_database %s parameters.db", remoteexename, remoteparameterfile); //NOTE: switch to this once we have updated the models that are on the server!!
+    //NOTE: We delete the existing parameter database. This is only necessary because the exe does not delete it when trying to overwrite.
+    sprintf(command, "rm %s;/home/magnus/%s create_parameter_database %s %s", remoteparameterdb, remoteexename, remoteparameterfile, remoteparameterdb);
 
     //qDebug() << command;
 
@@ -828,7 +826,27 @@ bool SSHInterface::createParameterDatabase(const char *remoteparameterfile, cons
     return success;
 }
 
-void SSHInterface::runModel(const char *exename, const char *remoteInputFile)
+
+bool SSHInterface::exportParameters(const char *remoteexename, const char *remoteparameterdb, const char *remoteparameterfile)
+{
+    if(!isInstanceConnected())
+    {
+        //NOTE: should never happen if interface behaves correctly
+        //TODO: log error
+        return false;
+    }
+    char command[512];
+
+    sprintf(command, "rm %s;/home/magnus/%s export_parameters %s %s", remoteparameterfile, remoteexename, remoteparameterdb, remoteparameterfile);
+
+    std::stringstream output;
+    bool success = runCommand(command, output, true);
+
+    return success;
+}
+
+
+void SSHInterface::runModel(const char *exename, const char *remoteInputFile, const char *remotedbname)
 {
     if(!isInstanceConnected())
     {
@@ -840,8 +858,7 @@ void SSHInterface::runModel(const char *exename, const char *remoteInputFile)
     // so we delete them for now, but we should find another way to handle this eventually.
     char runcommand[512];
 
-    sprintf(runcommand, "rm results.db;rm inputs.db;/home/magnus/%s run %s", exename, remoteInputFile);
-    //sprintf(runcommand, "rm results.db; rm inputs.db;/home/magnus/%s run %s parameters.db", exename, remoteInputFile); //NOTE: switch to this when we update the models that are on the server!!
+    sprintf(runcommand, "rm results.db; rm inputs.db;/home/magnus/%s run %s %s", exename, remoteInputFile, remotedbname);
 
     std::stringstream out;
     runCommand(runcommand, out, true);

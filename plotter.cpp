@@ -254,7 +254,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
             accumulator_set<double, features<tag::variance>> obsacc;
             accumulator_set<double, features<tag::mean, tag::min, tag::max>>  residualacc;
             accumulator_set<double, features<tag::mean>> residualabsacc;
-            accumulator_set<double, features<tag::sum, tag::mean>> residualsquareacc;
+            accumulator_set<double, features<tag::mean>> residualsquareacc;
             accumulator_set<double, features<tag::mean, tag::variance, tag::covariance<double, tag::covariate1>>> xacc;
 
             for(int i = 0; i < count; ++i)
@@ -273,8 +273,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                     residualabsacc(std::abs(residual));
                     residualsquareacc(residual*residual);
 
-
-                    xacc(xval[i], covariate1=residual); //NOTE: Used for linear regression.
+                    xacc(xval[i], covariate1=residual);
                 }
                 else
                 {
@@ -294,9 +293,10 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
             double meanerror         = mean(residualacc);
             double meanabsoluteerror = mean(residualabsacc);
             double meansquarederror  = mean(residualsquareacc);
-            double sumsquarederror   = sum(residualsquareacc);
 
-            double nashsutcliffe = 1.0 - sumsquarederror / observedvariance; //TODO: check for observedvariance==0 ?
+            //TODO: There looks like there is something wrong with the Nash-Sutcliffe coefficient, but I don't know what!
+
+            double nashsutcliffe = 1.0 - meansquarederror / observedvariance;
 
             resultsInfo_->append(QString(
                     "Observed: %1, vs Modeled: %2<br/>"

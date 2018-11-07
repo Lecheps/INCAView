@@ -64,6 +64,7 @@ struct TreeData
     int parentID;
     QString name;
     QString unit;
+    QString description;
 };
 
 //! [0]

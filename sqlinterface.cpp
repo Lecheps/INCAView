@@ -33,13 +33,13 @@ bool SQLInterface::getParameterStructure(QVector<TreeData> &structuredata)
         return false;
     }
 
-    const char *command = "SELECT parent.ID as parentID, child.ID, child.name, child.unit "
+    const char *command = "SELECT parent.ID as parentID, child.ID, child.name, child.unit, child.description "
                                   "FROM ParameterStructure as parent, ParameterStructure as child "
                                   "WHERE child.lft > parent.lft "
                                   "AND child.rgt < parent.rgt "
                                   "AND child.dpt = parent.dpt + 1 "
                                   "UNION "
-                                  "SELECT 0 as parentID, child.ID, child.Name, child.unit "
+                                  "SELECT 0 as parentID, child.ID, child.Name, child.unit, child.description "
                                   "FROM ParameterStructure as child "
                                   "WHERE child.dpt = 0 "
                                   "ORDER BY child.ID";
@@ -59,10 +59,11 @@ bool SQLInterface::getParameterStructure(QVector<TreeData> &structuredata)
     while(query.next())
     {
         TreeData item;
-        item.parentID = query.value(0).toInt();
-        item.ID       = query.value(1).toInt();
-        item.name     = query.value(2).toString();
-        item.unit     = query.value(3).toString();
+        item.parentID    = query.value(0).toInt();
+        item.ID          = query.value(1).toInt();
+        item.name        = query.value(2).toString();
+        item.unit        = query.value(3).toString();
+        item.description = query.value(4).toString();
         structuredata.push_back(item);
     }
 
@@ -144,9 +145,9 @@ bool SQLInterface::getParameterValuesMinMax(std::map<uint32_t, parameter_min_max
 
                 case parametertype_uint :
                 {
-                    entry.min.val_uint = query.value(2).toUInt();
-                    entry.max.val_uint = query.value(3).toUInt();
-                    entry.value.val_uint = query.value(4).toUInt();
+                    entry.min.val_uint = query.value(2).toULongLong();
+                    entry.max.val_uint = query.value(3).toULongLong();
+                    entry.value.val_uint = query.value(4).toULongLong();
                 } break;
 
                 case parametertype_ptime :

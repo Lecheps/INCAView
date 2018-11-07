@@ -26,7 +26,7 @@ public:
     Qt::ItemFlags flags(const QModelIndex &index) const;
 
     bool areAllParametersInRange() const;
-    void addParameter(const QString&, const QString&, int, int, const parameter_min_max_val_serial_entry&);
+    void addParameter(const QString&, const QString&, const QString &description, int, int, const parameter_min_max_val_serial_entry&);
     void clearVisibleParameters();
     void setChildrenVisible(int);
 

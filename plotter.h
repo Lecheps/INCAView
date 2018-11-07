@@ -34,13 +34,15 @@ public:
     void clearPlots();
 
     QVector<int> currentPlottedIDs_;
+
+    std::unordered_map<int, QVector<double>> cache_; //NOTE: We want to be able to access this from the mainwindow, and I can't be bothered to write accessors for it.
 private:
     QCustomPlot *plot_;
     QTextBrowser *resultsInfo_;
 
     QVector<QColor> graphColors_;
 
-    std::unordered_map<int, QVector<double>> cache_;
+
     std::unordered_map<int, int64_t> startDateCache_; //NOTE: For now we just store the start date for the plots and assume daily values. This should probably be improved eventually.
 };
 
