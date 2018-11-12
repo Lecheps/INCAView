@@ -205,12 +205,12 @@ bool SQLInterface::writeParameterValues(QVector<parameter_serial_entry>& writeda
 
             case parametertype_uint:
             {
-                query.bindValue(":value", entry.value.val_uint);
+                query.bindValue(":value", qulonglong(entry.value.val_uint));
             } break;
 
             case parametertype_ptime:
             {
-                query.bindValue(":value", entry.value.val_ptime);
+                query.bindValue(":value", qlonglong( entry.value.val_ptime));
             } break;
 
             default:

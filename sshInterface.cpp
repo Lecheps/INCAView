@@ -1,7 +1,7 @@
 #include "sshInterface.h"
 #include <QDebug>
 #include <QTime>
-#include <QRandomGenerator>
+//#include <QRandomGenerator>
 #include <fstream>
 
 //NOTE: Useful blog post on using QThread: https://mayaposch.wordpress.com/2011/11/01/how-to-really-truly-use-qthreads-the-full-explanation/
