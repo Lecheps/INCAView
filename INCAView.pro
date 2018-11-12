@@ -54,7 +54,7 @@ INCLUDEPATH += $$PWD/include
 #DEPENDPATH += $$PWD/../INCA/INCA/libraries/sqlite3
 
 
-PRE_TARGETDEPS += $$PWD/lib/libssh.dll.a
+win:PRE_TARGETDEPS += $$PWD/lib/libssh.dll.a
 #$$PWD/libs/libpython36.a
                  #$$PWD/../INCA/INCA/libraries/sqlite3/libs/libsqlite3.a\
 
