@@ -1,6 +1,7 @@
 #include "plotter.h"
 
 #include <boost/accumulators/accumulators.hpp>
+#include <boost/accumulators/statistics/stats.hpp>
 #include <boost/accumulators/statistics/mean.hpp>
 #include <boost/accumulators/statistics/min.hpp>
 #include <boost/accumulators/statistics/max.hpp>
@@ -76,7 +77,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
 
 
                 using namespace boost::accumulators;
-                accumulator_set<double, features<tag::min, tag::max, tag::mean, tag::variance>> acc;
+                accumulator_set<double, stats<tag::min, tag::max, tag::mean, tag::variance>> acc;
                 for(double d : yval)
                 {
                     if(!std::isnan(d))
@@ -111,7 +112,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                     int prevyear = workingdate.date().year();
 
                     int dayscnt = 0;
-                    accumulator_set<double, features<tag::mean>> localAcc;
+                    accumulator_set<double, stats<tag::mean>> localAcc;
 
                     for(int j = 0; j < cnt; ++j)
                     {
@@ -126,7 +127,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                             graphmin = std::min(graphmin, value);
                             graphmax = std::max(graphmax, value);
 
-                            localAcc = accumulator_set<double, features<tag::mean>>(); //NOTE: Reset it.
+                            localAcc = accumulator_set<double, stats<tag::mean>>(); //NOTE: Reset it.
                             dayscnt = 0;
                             prevyear = curyear;
                         }
@@ -146,7 +147,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                     int prevmonth = workingdate.date().month();
                     int prevyear = workingdate.date().year();
 
-                    accumulator_set<double, features<tag::mean>> localAcc;
+                    accumulator_set<double, stats<tag::mean>> localAcc;
                     //double sum = 0;
                     int dayscnt = 0;
                     for(int j = 0; j < cnt; ++j)
@@ -163,7 +164,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                             graphmin = std::min(graphmin, value);
                             graphmax = std::max(graphmax, value);
 
-                            localAcc = accumulator_set<double, features<tag::mean>>(); //NOTE: Reset it.
+                            localAcc = accumulator_set<double, stats<tag::mean>>(); //NOTE: Reset it.
                             dayscnt = 0;
                             prevmonth = curmonth;
                             prevyear = workingdate.date().year();
@@ -251,11 +252,11 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
             using namespace boost::accumulators;
 
             //TODO: Do we really need separate accumulators for residual, absolute residual and squared residual? Could they be handled by one accumulator?
-            accumulator_set<double, features<tag::variance>> obsacc;
-            accumulator_set<double, features<tag::mean, tag::min, tag::max>>  residualacc;
-            accumulator_set<double, features<tag::mean>> residualabsacc;
-            accumulator_set<double, features<tag::mean>> residualsquareacc;
-            accumulator_set<double, features<tag::mean, tag::variance, tag::covariance<double, tag::covariate1>>> xacc;
+            accumulator_set<double, stats<tag::variance>> obsacc;
+            accumulator_set<double, stats<tag::mean, tag::min, tag::max>>  residualacc;
+            accumulator_set<double, stats<tag::mean>> residualabsacc;
+            accumulator_set<double, stats<tag::mean>> residualsquareacc;
+            accumulator_set<double, stats<tag::mean, tag::variance, tag::covariance<double, tag::covariate1>>> xacc;
 
             for(int i = 0; i < count; ++i)
             {
