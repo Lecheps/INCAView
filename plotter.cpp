@@ -40,7 +40,7 @@ void Plotter::clearPlots()
     resultsInfo_->clear();
 }
 
-void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& resultnames, PlotMode mode)
+void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& resultnames, PlotMode mode, QVector<bool> &scatter)
 {
     //NOTE: Right now we just throw out all previous graphs and re-create everything. We could keep track of which ID corresponds to which graph (in which plot mode)
     // and then only update/create the graphs that have changed. However, this should only be necessary if this routine runs very slowly on some user machines.
@@ -193,6 +193,11 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                     dateTicker->setDateTimeFormat("d. MMMM\nyyyy");
                     plot_->xAxis->setTicker(dateTicker);
 
+                    if(scatter[i])
+                    {
+                        graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssCircle, QPen(Qt::black, 1.5), QBrush(Qt::white), 9));
+                    }
+
                     graph->setData(displayedx, yval, true);
                 }
 
@@ -241,7 +246,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
             if(observed.empty() || modeled.empty()) return;
 
             //TODO: Should we give a warning if the count of the two sets are not equal?
-            int count = std::min(observed.count()-alignobs, modeled.count()-alignmod);
+            int count = std::min((int64_t)observed.count()-alignobs, modeled.count()-alignmod);
 
             QVector<double> residuals(count);
             QVector<double> xval(count);
