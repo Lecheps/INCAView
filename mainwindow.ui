@@ -159,6 +159,13 @@
             </layout>
            </item>
            <item>
+            <widget class="QCheckBox" name="checkBoxScatterInputs">
+             <property name="text">
+              <string>Scatter plot for inputs</string>
+             </property>
+            </widget>
+           </item>
+           <item>
             <widget class="QTabWidget" name="tabWidget">
              <property name="minimumSize">
               <size>

@@ -42,6 +42,8 @@ MainWindow::MainWindow(QWidget *parent) :
     QObject::connect(ui->radioButtonErrorHistogram, &QRadioButton::clicked, this, &MainWindow::updateGraphsAndResultSummary);
     QObject::connect(ui->radioButtonErrorNormalProbability, &QRadioButton::clicked, this, &MainWindow::updateGraphsAndResultSummary);
 
+    QObject::connect(ui->checkBoxScatterInputs, &QCheckBox::clicked, this, &MainWindow::updateGraphsAndResultSummary);
+
     //NOTE: the lineeditdelegate is used by the tableviewparameters to provide an input widget when editing parameter values.
     lineEditDelegate = new ParameterEditDelegate();
     ui->tableViewParameters->setItemDelegateForColumn(1, lineEditDelegate);
@@ -922,14 +924,16 @@ void MainWindow::updateGraphsAndResultSummary()
             else if(ui->radioButtonErrorHistogram->isChecked()) mode = PlotMode_ErrorHistogram;
             else if(ui->radioButtonErrorNormalProbability->isChecked()) mode = PlotMode_ErrorNormalProbability;
 
-           //TODO: Using the currentDateTime is temporary. Instead we should load the dates from the database
-            //QDateTime date = QDateTime::currentDateTime();
-
             QVector<int> IDs;
             IDs.append(resultIDs);
             IDs.append(inputIDs);
 
-            plotter_->plotGraphs(IDs, names, mode);
+
+            QVector<bool> scatter;
+            for(int i = 0; i < resultIDs.size(); ++i) scatter << false;
+            for(int i = 0; i < inputIDs.size(); ++i) scatter << ui->checkBoxScatterInputs->isChecked();
+
+            plotter_->plotGraphs(IDs, names, mode, scatter);
         }
     }
     else
