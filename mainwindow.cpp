@@ -35,6 +35,7 @@ MainWindow::MainWindow(QWidget *parent) :
     setWeExpectToBeConnected(false);
 
     QObject::connect(ui->radioButtonDaily, &QRadioButton::clicked, this, &MainWindow::updateGraphsAndResultSummary);
+    QObject::connect(ui->radioButtonDailyNormalized, &QRadioButton::clicked, this, &MainWindow::updateGraphsAndResultSummary);
     QObject::connect(ui->radioButtonMonthlyAverages, &QRadioButton::clicked, this, &MainWindow::updateGraphsAndResultSummary);
     QObject::connect(ui->radioButtonYearlyAverages, &QRadioButton::clicked, this, &MainWindow::updateGraphsAndResultSummary);
     QObject::connect(ui->radioButtonErrors, &QRadioButton::clicked, this, &MainWindow::updateGraphsAndResultSummary);
@@ -76,6 +77,7 @@ MainWindow::MainWindow(QWidget *parent) :
     //NOTE: If we want a rectangle zoom for the plot, look at http://www.qcustomplot.com/index.php/support/forum/227
 
     QObject::connect(ui->widgetPlotResults, &QCustomPlot::mouseMove, this, &MainWindow::updateGraphToolTip);
+    QObject::connect(ui->widgetPlotResults, &QCustomPlot::mouseWheel, this, &MainWindow::getCurrentRange);
 
     //TODO: We have to think about whether the login info for the hub should be hard coded.
     //NOTE: The hub ssh keys have to be distributed with the exe and be placed in the same folder as the exe.
@@ -506,6 +508,7 @@ void MainWindow::loadResultAndInputStructure(const char *ResultDb, const char *I
     //TODO: The following should be done somewhere else?
 
     ui->radioButtonDaily->setEnabled(true);
+    ui->radioButtonDailyNormalized->setEnabled(true);
     ui->radioButtonMonthlyAverages->setEnabled(true);
     ui->radioButtonYearlyAverages->setEnabled(true);
     ui->radioButtonErrors->setEnabled(true);
@@ -561,6 +564,7 @@ void MainWindow::setWeExpectToBeConnected(bool connected)
         ui->pushRun->setEnabled(false);
         ui->pushCreateDatabase->setEnabled(false);
         ui->radioButtonDaily->setEnabled(false);
+        ui->radioButtonDailyNormalized->setEnabled(false);
         ui->radioButtonMonthlyAverages->setEnabled(false);
         ui->radioButtonYearlyAverages->setEnabled(false);
         ui->radioButtonErrors->setEnabled(false);
@@ -912,6 +916,7 @@ void MainWindow::updateGraphsAndResultSummary()
         {
             PlotMode mode = PlotMode_Daily;
             if(ui->radioButtonMonthlyAverages->isChecked()) mode = PlotMode_MonthlyAverages;
+            else if(ui->radioButtonDailyNormalized->isChecked()) mode = PlotMode_DailyNormalized;
             else if(ui->radioButtonYearlyAverages->isChecked()) mode = PlotMode_YearlyAverages;
             else if(ui->radioButtonErrors->isChecked()) mode = PlotMode_Error;
             else if(ui->radioButtonErrorHistogram->isChecked()) mode = PlotMode_ErrorHistogram;
@@ -964,7 +969,7 @@ void MainWindow::updateGraphToolTip(QMouseEvent *event)
                 if(i == 0) valueString.append("Error: ");
                 else valueString.append("Linearly regressed error: ");
             }
-            else if(ui->radioButtonDaily->isChecked() || ui->radioButtonMonthlyAverages->isChecked() || ui->radioButtonYearlyAverages->isChecked())
+            else if(ui->radioButtonDaily->isChecked() || ui->radioButtonMonthlyAverages->isChecked() || ui->radioButtonYearlyAverages->isChecked() || ui->radioButtonDailyNormalized->isChecked())
             {
                 //TODO: instead of doing this we should just store a description with each graph in the Plotter and read that here.
                 QString name;
@@ -1006,6 +1011,8 @@ void MainWindow::updateGraphToolTip(QMouseEvent *event)
             dateString = QLocale().toString(date, "MMMM yyyy").append(" monthly average");
         else if(ui->radioButtonDaily->isChecked() || ui->radioButtonErrors->isChecked())
             dateString = QLocale().toString(date, "d. MMMM yyyy");
+        else if(ui->radioButtonDailyNormalized->isChecked() )
+            dateString = QLocale().toString(date, "d. MMMM yyyy").append("Normalized");
 
 
         ui->labelGraphValues->setText(QString("%1:\n%2").arg(dateString).arg(valueString));
@@ -1013,6 +1020,17 @@ void MainWindow::updateGraphToolTip(QMouseEvent *event)
     else
     {
         ui->labelGraphValues->setText("");
+    }
+}
+
+
+
+void MainWindow::getCurrentRange(QWheelEvent *event)
+{
+    //NOTE: This is done to keep the range when new plots are added or the model is run again
+    if (event)
+    {
+        plotter_->setXrange(ui->widgetPlotResults->xAxis->range());
     }
 }
 
@@ -1168,3 +1186,8 @@ void MainWindow::undo(bool checked)
     }
 }
 
+
+void MainWindow::on_widgetPlotResults_windowTitleChanged(const QString &title)
+{
+
+}

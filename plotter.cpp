@@ -49,7 +49,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
 
     currentPlottedIDs_ = IDs;
 
-    if(mode == PlotMode_Daily || mode == PlotMode_MonthlyAverages || mode == PlotMode_YearlyAverages)
+    if(mode == PlotMode_Daily || mode == PlotMode_MonthlyAverages || mode == PlotMode_YearlyAverages || PlotMode_DailyNormalized)
     {
         double minyrange = 0.0;
         double maxyrange = 0.0;
@@ -177,6 +177,26 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
 
                     graph->setData(displayedx, displayedy, true);
                 }
+                else if ( mode == PlotMode_DailyNormalized)
+                {
+//                    double currentMean = mean(acc);
+                    double range = max(acc) - min(acc);
+                    graphmin = 0.;
+                    graphmax = 1.;
+                    QVector<double> displayedx(cnt);
+                    QVector<double> displayedy(cnt);
+                    for(int j = 0; j < cnt; ++j)
+                    {
+                        displayedy[j] = (yval[j] - min(acc)) / range ;
+                        displayedx[j] = (double)(startDate + 24*3600*j);
+                    }
+                    QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
+                    dateTicker->setDateTimeFormat("d. MMMM\nyyyy");
+                    plot_->xAxis->setTicker(dateTicker);
+
+                    graph->setData(displayedx, displayedy, true);
+
+                }
                 else //mode == PlotMode_Daily
                 {
                     graphmin = min(acc);
@@ -196,6 +216,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                     graph->setData(displayedx, yval, true);
                 }
 
+
                 maxyrange = std::max(graphmax, maxyrange);
                 minyrange = std::min(graphmin, minyrange);
                 if(maxyrange - minyrange < QCPRange::minRange)
@@ -203,8 +224,17 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                     maxyrange = minyrange + 2.0*QCPRange::minRange;
                 }
                 plot_->yAxis->setRange(minyrange, maxyrange);
+
                 bool foundrange;
-                plot_->xAxis->setRange(graph->data()->keyRange(foundrange));
+                if (! isSetXrange_)
+                {
+                    plot_->xAxis->setRange(graph->data()->keyRange(foundrange));
+                    isSetXrange_ = true;
+                }
+                else
+                {
+                    plot_->xAxis->setRange(xrange_);
+                }
             }
         }
     }
@@ -485,5 +515,10 @@ double NormalCDF(double x)
     double y = 1.0 - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1)*t*exp(-x*x);
 
     return 0.5*(1.0 + sign*y);
+}
+
+void Plotter::setXrange(QCPRange xrange)
+{
+    xrange_ = xrange;
 }
 

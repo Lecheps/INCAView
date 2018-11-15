@@ -51,12 +51,15 @@ private slots:
     void copyToClipboard(bool);
     void undo(bool);
     void updateGraphToolTip(QMouseEvent *event);
+    void getCurrentRange(QWheelEvent* event);
     void parameterWasEdited(ParameterEditAction);
     void handleInvoluntarySSHDisconnect();
 
     void log(const QString &);
     void logError(const QString &);
     void logSSHError(const QString&);
+
+    void on_widgetPlotResults_windowTitleChanged(const QString &title);
 
 private:
     void setParametersHaveBeenEditedSinceLastSave(bool);

@@ -72,6 +72,12 @@
             <height>100</height>
            </size>
           </property>
+          <property name="cursor">
+           <cursorShape>CrossCursor</cursorShape>
+          </property>
+          <property name="mouseTracking">
+           <bool>true</bool>
+          </property>
          </widget>
          <widget class="QWidget" name="layoutWidget">
           <layout class="QVBoxLayout" name="verticalLayout">
@@ -99,6 +105,13 @@
                 <widget class="QRadioButton" name="radioButtonDaily">
                  <property name="text">
                   <string>Daily</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QRadioButton" name="radioButtonDailyNormalized">
+                 <property name="text">
+                  <string>Normalized Daily</string>
                  </property>
                 </widget>
                </item>
@@ -324,7 +337,7 @@
      <x>0</x>
      <y>0</y>
      <width>1120</width>
-     <height>18</height>
+     <height>19</height>
     </rect>
    </property>
   </widget>
