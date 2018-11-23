@@ -49,7 +49,7 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
 
     currentPlottedIDs_ = IDs;
 
-    if(mode == PlotMode_Daily || mode == PlotMode_MonthlyAverages || mode == PlotMode_YearlyAverages || PlotMode_DailyNormalized)
+    if(mode == PlotMode_Daily || mode == PlotMode_MonthlyAverages || mode == PlotMode_YearlyAverages || mode == PlotMode_DailyNormalized)
     {
         double minyrange = 0.0;
         double maxyrange = 0.0;
@@ -230,10 +230,12 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                 }
                 plot_->yAxis->setRange(minyrange, maxyrange);
 
-                bool foundrange;
-                if (! isSetXrange_)
-                {
-                    plot_->xAxis->setRange(graph->data()->keyRange(foundrange));
+                if (!isSetXrange_)
+                { 
+                    bool foundrange;
+                    QCPRange range = graph->data()->keyRange(foundrange);
+                    plot_->xAxis->setRange(range);
+                    xrange_ = range;
                     isSetXrange_ = true;
                 }
                 else
@@ -462,6 +464,11 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
     plot_->replot();
 }
 
+void Plotter::setXrange(QCPRange xrange)
+{
+    xrange_ = xrange;
+}
+
 
 //NOTE: inverse normal taken from here: https://www.johndcook.com/blog/cpp_phi_inverse/ (it says that it has a do-whatever-you-want-with-it licence)
 
@@ -517,10 +524,5 @@ double NormalCDF(double x)
     double y = 1.0 - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1)*t*exp(-x*x);
 
     return 0.5*(1.0 + sign*y);
-}
-
-void Plotter::setXrange(QCPRange xrange)
-{
-    xrange_ = xrange;
 }
 
