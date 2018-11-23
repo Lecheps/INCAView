@@ -235,7 +235,7 @@ Qt::ItemFlags ParameterModel::flags(const QModelIndex &index) const
     return QAbstractTableModel::flags(index);
 }
 
-bool ParameterModel::areAllParametersInRange() const
+bool ParameterModel::areAllParametersInRange(QVector<int> &IDsNotInRange) const
 {
     bool result = true;
     for(auto& key_value : IDtoParam_)
@@ -244,7 +244,7 @@ bool ParameterModel::areAllParametersInRange() const
         if(!param->isInRange())
         {
             result = false;
-            break;
+            IDsNotInRange.push_back(key_value.first);
         }
     }
     return result;

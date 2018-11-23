@@ -25,7 +25,7 @@ public:
     bool setData(const QModelIndex & index, const QVariant & value, int role = Qt::EditRole) override;
     Qt::ItemFlags flags(const QModelIndex &index) const;
 
-    bool areAllParametersInRange() const;
+    bool areAllParametersInRange(QVector<int> &IDsNotInRange) const;
     void addParameter(const QString&, const QString&, const QString &description, int, int, const parameter_min_max_val_serial_entry&);
     void clearVisibleParameters();
     void setChildrenVisible(int);

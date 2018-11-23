@@ -281,9 +281,6 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
             QVector<double> residuals(count);
             QVector<double> xval(count);
 
-            //TODO: We should expect the observed series to have potential NaN values (missing data)..
-            // That should be handled properly.
-
             using namespace boost::accumulators;
 
             //TODO: Do we really need separate accumulators for residual, absolute residual and squared residual? Could they be handled by one accumulator?

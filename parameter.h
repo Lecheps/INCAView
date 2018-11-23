@@ -13,7 +13,7 @@ public:
     bool isValidValue(const QString &valueVar);
     bool setValue(const QString &valueVar);
     int isNotInRange(const parameter_value& newval);
-    bool isInRange() { return !isNotInRange(value); }
+    bool isInRange() { return isNotInRange(value) == 0; }
 
     static QString getValueDisplayString(parameter_value value, parameter_type type, int precision = 10);
     static QDate valueAsQDate(parameter_value value);

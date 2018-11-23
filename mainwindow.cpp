@@ -641,13 +641,29 @@ void MainWindow::on_pushSaveParameters_clicked()
 
 void MainWindow::on_pushRun_clicked()
 {
-    if(parameterModel_->areAllParametersInRange())
+    QVector<Parameter *> parametersNotInRange;
+    if(parameterModel_->areAllParametersInRange(parametersNotInRange))
     {
         runModel();
     }
     else
     {
-        QMessageBox msgBox(QMessageBox::Warning, tr("Invalid parameters"), tr("Not all parameter values are in the [Min, Max] range. This may cause the model to crash. Run the model anyway?"));
+        QString msg = "Not all parameter values are in the suggested [Min, Max] range:";
+
+        for(Parameter *param : parametersNotInRange)
+        {
+            msg += "\n" + param->name;
+           //TODO: This does not work, I don't know why:
+           //int ID = param->ID;
+           //qDebug() << "ID of param out of range: " << ID;
+           //QString parentName = treeParameters_->getParentName(ID);
+           //msg += "\n" + param->name + " (" + parentName + ")";
+        }
+
+        msg += "\nThis may cause the model to behave unexpectedly. Run the model anyway?";
+
+
+        QMessageBox msgBox(QMessageBox::Warning, tr("Invalid parameters"), msg);
         QPushButton *runButton = msgBox.addButton(tr("Run model"), QMessageBox::ActionRole);
         QPushButton *abortButton = msgBox.addButton(QMessageBox::Cancel);
 
