@@ -34,6 +34,7 @@ private slots:
     void on_pushConnect_clicked();
     void on_pushDisconnect_clicked();
     void on_pushRun_clicked();
+    void on_pushRunOptimizer_clicked();
     void on_pushLoadProject_clicked();
     void on_pushSaveParameters_clicked();
     void on_pushCreateDatabase_clicked();

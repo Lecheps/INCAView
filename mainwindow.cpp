@@ -537,10 +537,12 @@ void MainWindow::updateRunButtonState()
       )
     {
         ui->pushRun->setEnabled(true);
+        ui->pushRunOptimizer->setEnabled(true);
     }
     else
     {
         ui->pushRun->setEnabled(false);
+        ui->pushRunOptimizer->setEnabled(false);
     }
 
 }
@@ -564,6 +566,7 @@ void MainWindow::setWeExpectToBeConnected(bool connected)
         ui->lineEditUsername->setEnabled(true);
         ui->pushDisconnect->setEnabled(false);
         ui->pushRun->setEnabled(false);
+        ui->pushRunOptimizer->setEnabled(false);
         ui->pushCreateDatabase->setEnabled(false);
         ui->radioButtonDaily->setEnabled(false);
         ui->radioButtonDailyNormalized->setEnabled(false);
@@ -675,6 +678,70 @@ void MainWindow::on_pushRun_clicked()
             // NOTE: Do nothing.
         }
     }
+}
+
+
+void MainWindow::on_pushRunOptimizer_clicked()
+{
+    ui->pushRunOptimizer->setEnabled(false);
+
+
+    QString setupScriptPath = QFileDialog::getOpenFileName(this,
+           tr("Select optimization script"), "", tr("Data files (*.dat)"));
+
+    if(setupScriptPath.isEmpty() || setupScriptPath.isNull())     //NOTE: in case the user clicked cancel.
+    {
+       return;
+    }
+
+    log("Attempting to run optimization...");
+
+    on_pushSaveParameters_clicked(); //NOTE: Save the parameters to the database.
+
+    if(weExpectToBeConnected_ && inputFileWasSelected_ && !inputFileWasUploaded_) //NOTE: If the input file was selected before we connected it has not been uploaded yet, so we have to do it now.
+    {
+        //TODO: This is repeated code from RunModel.
+
+        const char *remoteInputFileName = "uploadedinputs.dat";
+
+        QByteArray filename2 = selectedInputFilePath_.toLatin1();
+        bool success = sshInterface_->uploadEntireFile(filename2.data(), "~/", remoteInputFileName);
+
+        if(success) inputFileWasUploaded_ = true;
+    }
+
+    QString exename;
+    projectDb_.setDatabase(selectedParameterDbPath_);
+    projectDb_.getExenameFromParameterInfo(exename);
+
+    qDebug() << "exe name was: " << exename;
+
+    if(weExpectToBeConnected_)
+    {
+        //TODO: Not implemented
+    }
+    else
+    {
+        //For now, assume the exe is in the same directory as the parameter database.
+        QString program = projectDirectory_.absoluteFilePath(exename);
+
+        qDebug() << "trying to run program with optimization " << program;
+
+        QStringList arguments;
+        arguments << "run_optimizer" << selectedInputFilePath_ << selectedParameterDbPath_ << setupScriptPath << "optimized_parameters.db";
+
+        runModelProcessLocally(program, arguments);
+    }
+
+    log("Optimizer process completed.");
+
+    //NOTE: Load in the optimized parameters and run the model one more time to see the results.
+    QString dbpath = projectDirectory_.filePath("optimized_parameters.db");
+
+    loadParameterDatabase(dbpath);
+    runModel();
+
+    ui->pushRunOptimizer->setEnabled(true);
 }
 
 

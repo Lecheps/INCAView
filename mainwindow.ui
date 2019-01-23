@@ -322,6 +322,13 @@
        </widget>
       </item>
       <item>
+       <widget class="QPushButton" name="pushRunOptimizer">
+        <property name="text">
+         <string>Run optimizer</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <spacer name="horizontalSpacer_2">
         <property name="orientation">
          <enum>Qt::Horizontal</enum>
@@ -344,7 +351,7 @@
      <x>0</x>
      <y>0</y>
      <width>1120</width>
-     <height>19</height>
+     <height>18</height>
     </rect>
    </property>
   </widget>
