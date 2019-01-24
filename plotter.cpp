@@ -194,6 +194,11 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                     dateTicker->setDateTimeFormat("d. MMMM\nyyyy");
                     plot_->xAxis->setTicker(dateTicker);
 
+                    if(scatter[i])
+                    {
+                        graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssCircle, QPen(Qt::black, 1.5), QBrush(Qt::white), 9));
+                    }
+
                     graph->setData(displayedx, displayedy, true);
 
                 }
