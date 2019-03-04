@@ -1167,6 +1167,7 @@ void MainWindow::on_pushExportResults_clicked()
     //NOTE: For result series it is safe to assume that they all have the same length.
     int seriesCount = resultIDs.count();
     QVector<QVector<double>*> resultSeries(seriesCount);
+    file << "\"date\",";
     for(size_t idx = 0; idx < seriesCount; ++idx)
     {
         resultSeries[idx] = &plotter_->cache_[resultIDs[idx]];
@@ -1178,8 +1179,15 @@ void MainWindow::on_pushExportResults_clicked()
 
     int stepcount = resultSeries[0]->count();
 
+    int64_t date = plotter_->startDateCache_[resultIDs[0]]; //NOTE: We are assuming that all result series start at the same date.
+
     for(int t = 0; t < stepcount; ++t)
     {
+        QDateTime workingdate = QDateTime::fromSecsSinceEpoch(date, Qt::OffsetFromUTC, 0);
+        QString datestr = workingdate.toString("yyyy-MM-dd");
+        file << datestr.toLatin1().data() << ",";
+        date += 86400;
+
         for(int idx = 0; idx < seriesCount; ++idx)
         {
             file << resultSeries[idx]->at(t);
