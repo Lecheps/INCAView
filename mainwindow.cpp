@@ -1184,8 +1184,7 @@ void MainWindow::on_pushExportResults_clicked()
     for(int t = 0; t < stepcount; ++t)
     {
         QDateTime workingdate = QDateTime::fromSecsSinceEpoch(date, Qt::OffsetFromUTC, 0);
-        QString datestr = workingdate.toString("yyyy-MM-dd");
-        file << datestr.toLatin1().data() << ",";
+        file << workingdate.toString("yyyy-MM-dd").toStdString() << ",";
         date += 86400;
 
         for(int idx = 0; idx < seriesCount; ++idx)
