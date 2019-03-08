@@ -389,14 +389,19 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
             }
             else if(mode == PlotMode_ErrorNormalProbability)
             {
-                QVector<double> sortederrors = residuals;
-                qSort(sortederrors.begin(), sortederrors.end());
-                QVector<double> expected(count);
-
-                double a = count <= 10 ? 3.0/8.0 : 0.5;
-                for(int i = 0; i < count; ++i)
+                QVector<double> sortederrors;
+                sortederrors.reserve(residuals.size());
+                for(double D : residuals)
                 {
-                    expected[i] = NormalCDFInverse(((double)(i+1) - a)/((double)count + 1 - 2.0*a));
+                    if(!std::isnan(D)) sortederrors.push_back(D);
+                }
+                qSort(sortederrors.begin(), sortederrors.end());
+                QVector<double> expected(sortederrors.size());
+
+                double a = sortederrors.size() <= 10 ? 3.0/8.0 : 0.5;
+                for(int i = 0; i < sortederrors.size(); ++i)
+                {
+                    expected[i] = NormalCDFInverse(((double)(i+1) - a)/((double)sortederrors.size() + 1 - 2.0*a));
                     //sortederrors[i] = (sortederrors[i] - meanerror) / sigma;
                 }
 
@@ -440,9 +445,15 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
                 {
                     int bin = 0;
 
+                    if(std::isnan(residuals[i])) continue;
+
                     if(range > epsilon) bin = (int)floor((residuals[i]-minres)/range);
                     if(bin >= numbins) bin = numbins - 1; //NOTE: will happen with the max value;
-                    if(bin < 0) bin = 0; //NOTE: SHOULD not happen.
+                    if(bin < 0)
+                    {
+                        qDebug() << "unexpected bin for a number in histogram plot";
+                        bin = 0; //NOTE: SHOULD not happen.
+                    }
                     valuebins[bin] += invcount;
                     binmax = binmax < valuebins[bin] ? valuebins[bin] : binmax;
                 }
