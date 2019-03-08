@@ -418,6 +418,7 @@ void MainWindow::loadParameterData()
 
         QVector<TreeData> structuredata;
         projectDb_.getParameterStructure(structuredata);
+
         for(TreeData& data : structuredata)
         {
             auto parref = IDtoParam.find(data.ID); //NOTE: See if there is a parameter with this ID.
@@ -451,7 +452,7 @@ void MainWindow::loadParameterData()
 
 void MainWindow::loadResultAndInputStructure(const char *ResultDb, const char *InputDb)
 {
-    log("Loading result and input structure.");
+    log("Attempting to load result and input structure.");
 
     bool success = false;
     QVector<TreeData> resultstreedata;
@@ -470,6 +471,12 @@ void MainWindow::loadResultAndInputStructure(const char *ResultDb, const char *I
         QString inputdbpath = projectDirectory_.absoluteFilePath(InputDb);
         projectDb_.setDatabase(inputdbpath);
         success = success && projectDb_.getResultOrInputStructure(inputtreedata, "InputsStructure");
+    }
+
+    if(resultstreedata.empty())
+    {
+        logError("The result structure is empty. A results database may not have been created, maybe due to an error.");
+        return;
     }
 
     if(!success) return;
@@ -757,7 +764,16 @@ bool MainWindow::runModelProcessLocally(const QString& program, const QStringLis
         return false;
     }
 
+    bool correct = true;
+
     connect(&modelrun, &QProcess::readyReadStandardOutput, [&](){log(modelrun.readAllStandardOutput());});
+    connect(&modelrun, &QProcess::readyReadStandardError, [&](){logError(modelrun.readAllStandardError()); correct=false;});
+    connect(&modelrun, &QProcess::errorOccurred, [&]()
+    {
+        logError("An error occurred while running the model exe.");
+        correct = false;
+    }
+    );
 
     if(!modelrun.waitForFinished(-1)) //TODO: We could maybe have a timeout, but it is hard to predict what it should be (some models could potentially take a minute or two to run?).
     {
@@ -766,7 +782,7 @@ bool MainWindow::runModelProcessLocally(const QString& program, const QStringLis
         return false;
     }
 
-    return true;
+    return correct;
 }
 
 void MainWindow::runModel()
@@ -802,6 +818,8 @@ void MainWindow::runModel()
 
     qDebug() << "exe name was: " << exename;
 
+    bool success = true;
+
     if(weExpectToBeConnected_)
     {
         if(!sshInterface_->isInstanceConnected())
@@ -820,7 +838,7 @@ void MainWindow::runModel()
         QByteArray exename2 = exename.toLatin1();
 
         const char *remoteInputFile = "uploadedinputs.dat";
-        sshInterface_->runModel(exename2.data(), remoteInputFile, remoteParameterDbName);
+        sshInterface_->runModel(exename2.data(), remoteInputFile, remoteParameterDbName); //TODO: This one should also report success/error?
     }
     else
     {
@@ -838,18 +856,22 @@ void MainWindow::runModel()
         QStringList arguments;
         arguments << "run" << selectedInputFilePath_ << selectedParameterDbPath_;
 
-        runModelProcessLocally(program, arguments);
+        success = runModelProcessLocally(program, arguments);
     }
 
-    log("Model run process completed.");
+    //log("Model run process completed."); //NOTE: This one was just confusing, since it was also printed if there was an error.
 
-    //TODO: We should do a more rigorous check here. If e.g. the user has switched out the input file between runs then the tree structure may no longer be valid and should be recreated.
-    if(!treeResults_)
-        loadResultAndInputStructure(ResultDb, InputDb);
+    if(success)
+    {
+        //TODO: We should do a more rigorous check here. If e.g. the user has switched out the input file between runs then the tree structure may no longer be valid and should be recreated.
+        if(!treeResults_)
+            loadResultAndInputStructure(ResultDb, InputDb);
 
-    plotter_->clearCache();
+        plotter_->clearCache();
 
-    updateGraphsAndResultSummary(); //In case somebody had a graph selected, it is updated with a plot of the data generated from the last run.
+        updateGraphsAndResultSummary(); //In case somebody had a graph selected, it is updated with a plot of the data generated from the last run.
+    }
+
     ui->pushRun->setEnabled(true);
 }
 
