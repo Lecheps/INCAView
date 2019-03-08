@@ -253,6 +253,9 @@ void MainWindow::loadParameterDatabase(QString fileName)
 
 void MainWindow::on_pushCreateDatabase_clicked()
 {
+    //TODO: This entire thing needs to be rethought. Button is removed for now.
+
+
     if(!weExpectToBeConnected_)
     {
         //NOTE: This should not be possible. The button should not be active in that case.
@@ -362,7 +365,7 @@ void MainWindow::on_pushExportParameters_clicked()
         qDebug() << "trying to run program " << program;
 
         QStringList arguments;
-        arguments << "export_parameters" <<  selectedParameterDbPath_ << exportParametersPath;
+        arguments << "convert_parameters" <<  selectedParameterDbPath_ << exportParametersPath;
 
         runModelProcessLocally(program, arguments);
     }

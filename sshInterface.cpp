@@ -812,7 +812,7 @@ bool SSHInterface::createParameterDatabase(const char *remoteexename, const char
     char command[512];
 
     //NOTE: We delete the existing parameter database. This is only necessary because the exe does not delete it when trying to overwrite.
-    sprintf(command, "rm %s;/home/magnus/%s create_parameter_database %s %s", remoteparameterdb, remoteexename, remoteparameterfile, remoteparameterdb);
+    sprintf(command, "rm %s;/home/magnus/%s convert_parameters %s %s", remoteparameterdb, remoteexename, remoteparameterfile, remoteparameterdb);
 
     //qDebug() << command;
 
@@ -837,7 +837,7 @@ bool SSHInterface::exportParameters(const char *remoteexename, const char *remot
     }
     char command[512];
 
-    sprintf(command, "rm %s;/home/magnus/%s export_parameters %s %s", remoteparameterfile, remoteexename, remoteparameterdb, remoteparameterfile);
+    sprintf(command, "rm %s;/home/magnus/%s convert_parameters %s %s", remoteparameterfile, remoteexename, remoteparameterdb, remoteparameterfile);
 
     std::stringstream output;
     bool success = runCommand(command, output, true);
