@@ -77,6 +77,16 @@ QVariant ParameterModel::data(const QModelIndex &index, int role) const
         }
     } break;
 
+    case Qt::ToolTipRole:
+    {
+        //if(index.column() == 5)
+        {
+            int ID = visibleParamID_[index.row()];
+            Parameter* param = IDtoParam_.at(ID);
+            return param->description;
+        }
+    } break;
+
     case Qt::FontRole:
     {
         if(index.column() == 2 || index.column() == 3)
