@@ -301,13 +301,6 @@
     <item row="1" column="0">
      <layout class="QHBoxLayout" name="horizontalLayout_5">
       <item>
-       <widget class="QPushButton" name="pushCreateDatabase">
-        <property name="text">
-         <string>Create parameter database</string>
-        </property>
-       </widget>
-      </item>
-      <item>
        <widget class="QPushButton" name="pushExportParameters">
         <property name="text">
          <string>Export parameters</string>

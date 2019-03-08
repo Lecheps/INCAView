@@ -568,7 +568,7 @@ void MainWindow::setWeExpectToBeConnected(bool connected)
         ui->pushConnect->setEnabled(false);
         ui->lineEditUsername->setEnabled(false);
         ui->pushDisconnect->setEnabled(true);
-        ui->pushCreateDatabase->setEnabled(true);
+        //ui->pushCreateDatabase->setEnabled(true);
     }
     else
     {
@@ -577,7 +577,7 @@ void MainWindow::setWeExpectToBeConnected(bool connected)
         ui->pushDisconnect->setEnabled(false);
         ui->pushRun->setEnabled(false);
         ui->pushRunOptimizer->setEnabled(false);
-        ui->pushCreateDatabase->setEnabled(false);
+        //ui->pushCreateDatabase->setEnabled(false);
         ui->radioButtonDaily->setEnabled(false);
         ui->radioButtonDailyNormalized->setEnabled(false);
         ui->radioButtonMonthlyAverages->setEnabled(false);
