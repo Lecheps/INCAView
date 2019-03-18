@@ -40,7 +40,7 @@ void Plotter::clearPlots()
     resultsInfo_->clear();
 }
 
-void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& resultnames, PlotMode mode, QVector<bool> &scatter)
+void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& resultnames, PlotMode mode, QVector<bool> &scatter, bool logarithmicY)
 {
     //NOTE: Right now we just throw out all previous graphs and re-create everything. We could keep track of which ID corresponds to which graph (in which plot mode)
     // and then only update/create the graphs that have changed. However, this should only be necessary if this routine runs very slowly on some user machines.
@@ -48,6 +48,17 @@ void Plotter::plotGraphs(const QVector<int>& IDs, const QVector<QString>& result
     resultsInfo_->clear();
 
     currentPlottedIDs_ = IDs;
+
+    if(logarithmicY &&
+        (mode == PlotMode_Daily || mode == PlotMode_MonthlyAverages || mode == PlotMode_YearlyAverages || mode == PlotMode_DailyNormalized || mode == PlotMode_Error)
+    )
+    {
+        plot_->yAxis->setScaleType(QCPAxis::stLogarithmic);
+    }
+    else
+    {
+        plot_->yAxis->setScaleType(QCPAxis::stLinear);
+    }
 
     if(mode == PlotMode_Daily || mode == PlotMode_MonthlyAverages || mode == PlotMode_YearlyAverages || mode == PlotMode_DailyNormalized)
     {

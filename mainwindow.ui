@@ -129,6 +129,13 @@
                  </property>
                 </widget>
                </item>
+               <item>
+                <widget class="QCheckBox" name="checkBoxScatterInputs">
+                 <property name="text">
+                  <string>Scatter plot for inputs</string>
+                 </property>
+                </widget>
+               </item>
               </layout>
              </item>
              <item>
@@ -154,16 +161,16 @@
                  </property>
                 </widget>
                </item>
+               <item>
+                <widget class="QCheckBox" name="checkBoxLogarithmicPlot">
+                 <property name="text">
+                  <string>Logarithmic Y axis</string>
+                 </property>
+                </widget>
+               </item>
               </layout>
              </item>
             </layout>
-           </item>
-           <item>
-            <widget class="QCheckBox" name="checkBoxScatterInputs">
-             <property name="text">
-              <string>Scatter plot for inputs</string>
-             </property>
-            </widget>
            </item>
            <item>
             <widget class="QTabWidget" name="tabWidget">

@@ -43,6 +43,7 @@ MainWindow::MainWindow(QWidget *parent) :
     QObject::connect(ui->radioButtonErrorNormalProbability, &QRadioButton::clicked, this, &MainWindow::updateGraphsAndResultSummary);
 
     QObject::connect(ui->checkBoxScatterInputs, &QCheckBox::clicked, this, &MainWindow::updateGraphsAndResultSummary);
+    QObject::connect(ui->checkBoxLogarithmicPlot, &QCheckBox::clicked, this, &MainWindow::updateGraphsAndResultSummary);
 
     //NOTE: the lineeditdelegate is used by the tableviewparameters to provide an input widget when editing parameter values.
     lineEditDelegate = new ParameterEditDelegate();
@@ -1041,7 +1042,8 @@ void MainWindow::updateGraphsAndResultSummary()
             for(int i = 0; i < resultIDs.size(); ++i) scatter << false;
             for(int i = 0; i < inputIDs.size(); ++i) scatter << ui->checkBoxScatterInputs->isChecked();
 
-            plotter_->plotGraphs(IDs, names, mode, scatter);
+            bool logarithimicY = ui->checkBoxLogarithmicPlot->isChecked();
+            plotter_->plotGraphs(IDs, names, mode, scatter, logarithimicY);
         }
     }
     else

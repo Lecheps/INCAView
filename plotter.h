@@ -38,7 +38,7 @@ public:
 
 
     void filterUncachedIDs(const QVector<int>& IDs, QVector<int>& uncachedOut);
-    void plotGraphs(const QVector<int>& IDs, const QVector<QString>& resultnames, PlotMode mode, QVector<bool> &scatter);
+    void plotGraphs(const QVector<int>& IDs, const QVector<QString>& resultnames, PlotMode mode, QVector<bool> &scatter, bool logarithmicY);
 
     void addToCache(const QVector<int>& newIDs, const QVector<QVector<double>>& newResultsets, const QVector<int64_t>& startDates);
     void clearCache() { cache_.clear(); startDateCache_.clear(); }
