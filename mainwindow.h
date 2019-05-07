@@ -93,6 +93,10 @@ private:
 
     QVector<ParameterEditAction> editUndoStack_;
 
+    QString lastWorkingDirectory_;
+
+
+
     QString selectedParameterDbPath_;
     bool parameterDbWasSelected_ = false;
     QDir projectDirectory_;

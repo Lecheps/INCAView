@@ -25,6 +25,17 @@ MainWindow::MainWindow(QWidget *parent) :
         ui->lineEditUsername->setText("username");
     }
 
+    std::ifstream workingdirfile;
+    workingdirfile.open("last_working_directory.txt");
+    if(workingdirfile)
+    {
+        std::string workingdir;
+        workingdirfile >> workingdir;
+        lastWorkingDirectory_ = QString::fromStdString(workingdir);
+        workingdirfile.close();
+    }
+    qDebug() << "Last working directory was " << lastWorkingDirectory_;
+
     treeParameters_ = nullptr;
     treeResults_ = nullptr;
     treeInputs_  = nullptr;
@@ -188,8 +199,10 @@ void MainWindow::on_pushConnect_clicked()
 
 void MainWindow::on_pushLoadProject_clicked()
 {
+    //TODO: Should probably check that lastWorkingDirectory_ is a valid directory??
+
     QString fileName = QFileDialog::getOpenFileName(this,
-        tr("Open project database"), "", tr("Database files (*.db)"));
+        tr("Open project database"), lastWorkingDirectory_, tr("Database files (*.db)"));
 
     if(!fileName.isEmpty() && !fileName.isNull())     //NOTE: in case the user clicked cancel.
     {
@@ -228,6 +241,16 @@ void MainWindow::loadParameterDatabase(QString fileName)
 
         QFileInfo fileinfo(selectedParameterDbPath_);
         projectDirectory_ = fileinfo.absolutePath();
+        lastWorkingDirectory_ = projectDirectory_.path();
+
+        QByteArray workdirstr = lastWorkingDirectory_.toLatin1();
+        std::ofstream dirfile;
+        dirfile.open("last_working_directory.txt");
+        if(dirfile)
+        {
+            dirfile.write(workdirstr.data(), workdirstr.size());
+            dirfile.close();
+        }
 
         loadParameterData();
 
